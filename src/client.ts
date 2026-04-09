@@ -99,13 +99,13 @@ class CoreClient {
     this._url = options.url;
     this._token = options.token;
     this._clientInfo = {
-      id: "controluiclaw-sdk-client",
+      id: "openclaw-control-ui",
       version: "1.0.0",
       platform:
         typeof navigator !== "undefined"
           ? navigator.platform ?? "web"
           : "node",
-      mode: "sdk",
+      mode: "ui",
       ...options.clientInfo,
     };
     this._role = options.role ?? "operator";
