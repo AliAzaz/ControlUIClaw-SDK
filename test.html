@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ControlUIClaw SDK — Test Page</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0c0a1a; color: #e0e0e0; padding: 2rem; max-width: 800px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin-bottom: 1rem; color: #c4b5fd; }
+    .field { margin-bottom: 0.75rem; display: flex; gap: 0.5rem; align-items: center; }
+    .field label { min-width: 80px; font-size: 0.85rem; color: #b0a8cc; }
+    .field input { flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid #2a2545; background: #1a1530; color: #e0e0e0; font-size: 0.85rem; }
+    button { padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; font-size: 0.85rem; color: #fff; }
+    .btn-connect { background: #6c5ce7; } .btn-connect:hover { background: #7c6cf7; }
+    .btn-disconnect { background: #dc2626; }
+    .btn-send { background: #22c55e; }
+    .btn-send:disabled, .btn-connect:disabled { opacity: 0.4; cursor: default; }
+    .actions { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .status { font-size: 0.8rem; color: #6b6190; margin-bottom: 1rem; }
+    .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+    .status .dot.on { background: #22c55e; } .status .dot.off { background: #555; }
+    #log { background: #1a1530; border: 1px solid #2a2545; border-radius: 8px; padding: 1rem; height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+    .log-user { color: #a78bfa; } .log-assistant { color: #c4e0a5; } .log-system { color: #6b6190; font-style: italic; } .log-event { color: #fbbf24; }
+  </style>
+</head>
+<body>
+
+<h1>ControlUIClaw SDK Test</h1>
+
+<div class="field">
+  <label>Gateway:</label>
+  <input id="url" value="wss://localhost:18789" />
+</div>
+<div class="field">
+  <label>Token:</label>
+  <input id="token" type="password" placeholder="(optional)" />
+</div>
+
+<div class="actions">
+  <button class="btn-connect" id="btnConnect">Connect</button>
+  <button class="btn-disconnect" id="btnDisconnect">Disconnect</button>
+  <button class="btn-send" id="btnSessions">List Sessions</button>
+</div>
+
+<div class="status">
+  <span class="dot off" id="dot"></span>
+  <span id="statusLabel">Disconnected</span>
+</div>
+
+<div class="field">
+  <label>Session:</label>
+  <input id="sessionKey" placeholder="auto-generated on connect" />
+</div>
+<div class="field" style="margin-bottom: 1rem;">
+  <input id="msgInput" placeholder="Type a message..." style="flex:1" />
+  <button class="btn-send" id="btnSend" disabled>Send</button>
+</div>
+
+<div id="log"></div>
+
+<script type="module">
+  import { ControlUIClaw } from "./dist/controluiclaw.js";
+
+  const logEl = document.getElementById("log");
+  const dot = document.getElementById("dot");
+  const statusLabel = document.getElementById("statusLabel");
+  const btnSend = document.getElementById("btnSend");
+  const msgInput = document.getElementById("msgInput");
+  const sessionKeyInput = document.getElementById("sessionKey");
+
+  let claw = null;
+  let unsubHealth = null;
+  let unsubChat = null;
+
+  function log(cls, text) {
+    const span = document.createElement("span");
+    span.className = `log-${cls}`;
+    span.textContent = text + "\n";
+    logEl.appendChild(span);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStatus(connected) {
+    dot.className = `dot ${connected ? "on" : "off"}`;
+    statusLabel.textContent = connected ? "Connected" : "Disconnected";
+    btnSend.disabled = !connected;
+  }
+
+  // ── Connect ──────────────────────────────────────────────────────
+  document.getElementById("btnConnect").addEventListener("click", async () => {
+    // Cleanup previous
+    unsubHealth?.();
+    unsubChat?.();
+    claw?.disconnect();
+
+    const url = document.getElementById("url").value.trim();
+    const token = document.getElementById("token").value.trim() || undefined;
+
+    // 1. init
+    claw = ControlUIClaw.init({ url, token });
+
+    // 2. sessionHealth — connection + error events
+    unsubHealth = claw.sessionHealth((event) => {
+      log("event", `[${event.code}] ${event.message}`);
+      if (event.code === "connected") setStatus(true);
+      if (event.code === "disconnected") setStatus(false);
+    });
+
+    // 3. chatEvents — streaming, final, error, aborted
+    const streamBuffers = new Map();
+    unsubChat = claw.chatEvents((event) => {
+      switch (event.type) {
+        case "stream": {
+          const buf = (streamBuffers.get(event.runId) ?? "") + event.text;
+          streamBuffers.set(event.runId, buf);
+          let el = document.getElementById(`run-${event.runId}`);
+          if (!el) {
+            el = document.createElement("span");
+            el.id = `run-${event.runId}`;
+            el.className = "log-assistant";
+            logEl.appendChild(el);
+          }
+          el.textContent = `assistant: ${buf}\n`;
+          logEl.scrollTop = logEl.scrollHeight;
+          break;
+        }
+        case "final":
+          if (!streamBuffers.has(event.runId) && event.text) {
+            log("assistant", `assistant: ${event.text}`);
+          }
+          streamBuffers.delete(event.runId);
+          break;
+        case "error":
+          log("system", `Chat error: ${event.text}`);
+          streamBuffers.delete(event.runId);
+          break;
+        case "aborted":
+          log("system", "[run aborted]");
+          streamBuffers.delete(event.runId);
+          break;
+      }
+    });
+
+    // 4. connect
+    const result = await claw.connect();
+    if (!result.ok) {
+      log("system", `Connection failed: ${result.error?.message}`);
+      return;
+    }
+
+    if (!sessionKeyInput.value.trim()) {
+      sessionKeyInput.value = ControlUIClaw.createSessionKey();
+    }
+  });
+
+  // ── Disconnect ───────────────────────────────────────────────────
+  document.getElementById("btnDisconnect").addEventListener("click", () => {
+    unsubHealth?.();
+    unsubChat?.();
+    claw?.disconnect();
+    claw = null;
+    setStatus(false);
+  });
+
+  // ── List Sessions ────────────────────────────────────────────────
+  document.getElementById("btnSessions").addEventListener("click", async () => {
+    if (!claw?.isConnected) { log("system", "Not connected"); return; }
+    try {
+      const sessions = await claw.listSessions();
+      log("event", `Found ${sessions.length} session(s):`);
+      for (const s of sessions) {
+        log("event", `  ${s.derivedTitle || s.label || s.key} [${s.status ?? "?"}]`);
+      }
+    } catch (err) {
+      log("system", `Failed: ${err.message}`);
+    }
+  });
+
+  // ── Send Prompt ──────────────────────────────────────────────────
+  async function send() {
+    if (!claw?.isConnected) return;
+    const text = msgInput.value.trim();
+    if (!text) return;
+    const sessionKey = sessionKeyInput.value.trim();
+    if (!sessionKey) { log("system", "No session key"); return; }
+    msgInput.value = "";
+    log("user", `you: ${text}`);
+    try {
+      await claw.sendPrompt(sessionKey, text);
+    } catch (err) {
+      log("system", `Send failed: ${err.message}`);
+    }
+  }
+
+  btnSend.addEventListener("click", send);
+  msgInput.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+</script>
+
+</body>
+</html>
