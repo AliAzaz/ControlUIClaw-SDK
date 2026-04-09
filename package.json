@@ -24,6 +24,7 @@
   ],
   "scripts": {
     "build": "tsc && node -e \"const fs=require('fs'); for(const ext of ['.js','.js.map','.d.ts','.d.ts.map']){const s='dist/index'+ext,d='dist/controluiclaw'+ext; if(fs.existsSync(s)){fs.copyFileSync(s,d)}}\"",
+    "prepare": "npm run build",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build"
   },
