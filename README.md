@@ -1,6 +1,6 @@
 # ControlUIClaw SDK — WebSocket Integration Guide
 
-A developer guide for connecting to the ControlUIClaw gateway via the `@controluiclaw/sdk` WebSocket client. Covers initialization, connection lifecycle, event mapping, health monitoring, and graceful teardown.
+A developer guide for connecting to the ControlUIClaw gateway via the `@controluiclaw/sdk` WebSocket client. Covers initialization, connection lifecycle, event mapping, health monitoring, extended thinking, token usage tracking, and graceful teardown.
 
 ## Prerequisites
 
@@ -19,10 +19,11 @@ npm install @controluiclaw/sdk
 ```ts
 import { ControlUIClaw } from "@controluiclaw/sdk";
 
-// 1. Initialize
+// 1. Initialize (with thinking enabled)
 const claw = ControlUIClaw.init({
   url: "wss://your-gateway-host:18789",
   token: "your-auth-token",
+  thinking: "medium",
 });
 
 // 2. Subscribe to health events before connecting
@@ -30,14 +31,22 @@ const unsubHealth = claw.sessionHealth((event) => {
   console.log(`[${event.code}] ${event.message}`);
 });
 
-// 3. Connect
+// 3. Subscribe to chat events (with thinking + usage)
+const unsubChat = claw.chatEvents((event) => {
+  console.log(event.text);
+  if (event.thinking) console.log("Reasoning:", event.thinking);
+  if (event.usage) console.log("Tokens:", event.usage);
+});
+
+// 4. Connect
 const result = await claw.connect();
 if (!result.ok) {
   console.error("Connection failed:", result.error);
 }
 
-// 4. When done, disconnect and clean up
+// 5. When done, disconnect and clean up
 unsubHealth();
+unsubChat();
 claw.disconnect();
 ```
 
@@ -59,6 +68,7 @@ const claw = ControlUIClaw.init({
     "operator.approvals",
     "operator.pairing",
   ],
+  thinking: "medium",                  // Default thinking level for all messages
   autoReconnect: true,                 // Auto-reconnect on drop (default: true)
   initialBackoffMs: 800,               // First retry delay (default: 800ms)
   maxBackoffMs: 15_000,                // Max retry delay cap (default: 15s)
@@ -81,6 +91,7 @@ const claw = ControlUIClaw.init({
 | `token`           | `string`          | `undefined`                      | Auth token sent during handshake                   |
 | `role`            | `string`          | `"operator"`                     | Role claimed during handshake                      |
 | `scopes`          | `string[]`        | Full operator scopes             | Scopes requested during handshake                  |
+| `thinking`        | `ThinkingLevel`   | `"off"`                          | Default thinking level for all chat.send requests  |
 | `autoReconnect`   | `boolean`         | `true`                           | Automatically reconnect on disconnection           |
 | `initialBackoffMs`| `number`          | `800`                            | Initial reconnect backoff in milliseconds          |
 | `maxBackoffMs`    | `number`          | `15000`                          | Maximum reconnect backoff in milliseconds          |
@@ -224,7 +235,7 @@ const unsub = claw.sessionHealth((event: HealthEvent) => {
 
 ### Chat Events — `chatEvents()`
 
-Streaming tokens, completed messages, errors, and aborted runs.
+Streaming tokens, completed messages, errors, and aborted runs. Chat events now include **thinking content** and **token usage** when available.
 
 ```ts
 const unsub = claw.chatEvents((event: ChatEvent) => {
@@ -232,10 +243,13 @@ const unsub = claw.chatEvents((event: ChatEvent) => {
     case "stream":
       // Streaming token chunk arrived
       console.log("Streaming:", event.text);
+      if (event.thinking) console.log("Thinking:", event.thinking);
       break;
     case "final":
       // Run complete — full response available
       console.log("Final:", event.text);
+      if (event.thinking) console.log("Reasoning:", event.thinking);
+      if (event.usage) console.log("Usage:", event.usage);
       break;
     case "error":
       // Run failed
@@ -251,13 +265,146 @@ const unsub = claw.chatEvents((event: ChatEvent) => {
 
 #### `ChatEvent`
 
-| Field        | Type                                         | Description                                     |
-| ------------ | -------------------------------------------- | ----------------------------------------------- |
-| `type`       | `"stream" \| "final" \| "error" \| "aborted"` | Event type                                      |
-| `runId`      | `string`                                     | Unique run identifier                            |
-| `sessionKey` | `string`                                     | Session this event belongs to                    |
-| `text`       | `string`                                     | Extracted text (accumulated delta or full final)  |
-| `raw`        | `Record<string, unknown>`                    | Raw gateway payload for advanced use             |
+| Field        | Type                                           | Description                                      |
+| ------------ | ---------------------------------------------- | ------------------------------------------------ |
+| `type`       | `"stream" \| "final" \| "error" \| "aborted"` | Event type                                       |
+| `runId`      | `string`                                       | Unique run identifier                            |
+| `sessionKey` | `string`                                       | Session this event belongs to                    |
+| `text`       | `string`                                       | Extracted text (accumulated delta or full final)  |
+| `thinking`   | `string \| undefined`                          | Thinking/reasoning text (when extended thinking is enabled) |
+| `usage`      | `TokenUsage \| undefined`                      | Token usage counters (typically populated on `final`) |
+| `raw`        | `Record<string, unknown>`                      | Raw gateway payload for advanced use             |
+
+---
+
+## Extended Thinking
+
+Extended thinking enables the model to show its internal reasoning process. Set a thinking level globally or per-message.
+
+### Thinking Levels
+
+| Level       | Description                                    |
+| ----------- | ---------------------------------------------- |
+| `"off"`     | No thinking (default)                          |
+| `"minimal"` | Very brief internal reasoning                  |
+| `"low"`     | Light reasoning                                |
+| `"medium"`  | Moderate reasoning                             |
+| `"high"`    | Deep reasoning                                 |
+| `"xhigh"`   | Maximum reasoning depth                        |
+| `"adaptive"`| Provider picks automatically                   |
+
+### Global Default
+
+Set a default thinking level at initialization:
+
+```ts
+const claw = ControlUIClaw.init({
+  url: "wss://gateway:18789",
+  token: "xxx",
+  thinking: "medium",
+});
+```
+
+### Per-Message Override
+
+Override the default for a specific message:
+
+```ts
+// Use high thinking for a complex question
+await claw.sendPrompt(sessionKey, "Solve this step by step", { thinking: "high" });
+
+// Disable thinking for a simple question
+await claw.sendPrompt(sessionKey, "What time is it?", { thinking: "off" });
+```
+
+### Accessing Thinking Content
+
+Thinking text arrives in chat events via the `thinking` field:
+
+```ts
+claw.chatEvents((event) => {
+  // During streaming, thinking may arrive incrementally
+  if (event.type === "stream" && event.thinking) {
+    updateThinkingUI(event.thinking);
+  }
+
+  // On final, the complete thinking is available
+  if (event.type === "final" && event.thinking) {
+    console.log("Full reasoning:", event.thinking);
+  }
+});
+```
+
+---
+
+## Token Usage
+
+Every chat event can carry token usage counters. Usage is typically populated on `final` events with the complete totals, though `stream` events may carry partial usage from some providers.
+
+### `TokenUsage`
+
+| Field         | Type                      | Description                              |
+| ------------- | ------------------------- | ---------------------------------------- |
+| `input`       | `number \| undefined`     | Input / prompt tokens                    |
+| `output`      | `number \| undefined`     | Output / completion tokens               |
+| `totalTokens` | `number \| undefined`     | Total tokens (input + output)            |
+| `cacheRead`   | `number \| undefined`     | Tokens served from prompt cache          |
+| `cacheWrite`  | `number \| undefined`     | Tokens written to prompt cache           |
+| `cost`        | `Record<string, unknown>` | Provider-reported cost (when available)   |
+
+### Accessing Usage
+
+```ts
+claw.chatEvents((event) => {
+  if (event.type === "final" && event.usage) {
+    console.log(`Input: ${event.usage.input} tokens`);
+    console.log(`Output: ${event.usage.output} tokens`);
+    console.log(`Total: ${event.usage.totalTokens} tokens`);
+
+    if (event.usage.cacheRead) {
+      console.log(`Cache read: ${event.usage.cacheRead} tokens`);
+    }
+  }
+});
+```
+
+The SDK normalizes usage from different providers, accepting both camelCase (`inputTokens`, `outputTokens`) and snake_case (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) field names.
+
+---
+
+## Session Title Derivation
+
+The SDK derives human-readable titles for sessions when the gateway doesn't provide one. This uses the same cascading priority as the gateway:
+
+1. **`displayName`** — explicit user-set name
+2. **`label`** — if it looks like a real label (not raw metadata/JSON)
+3. **First user message** — truncated to 60 characters at word boundaries
+4. **Session key prefix + date** — fallback using the first 8 characters of the key
+
+### Automatic Derivation
+
+`listSessions()` automatically derives titles for sessions that are missing a `derivedTitle`:
+
+```ts
+const sessions = await claw.listSessions();
+
+for (const session of sessions) {
+  // derivedTitle is always populated — either from the gateway or derived client-side
+  console.log(session.derivedTitle);
+}
+```
+
+### Manual Derivation
+
+Use the static method to derive a title yourself:
+
+```ts
+const title = ControlUIClaw.deriveSessionTitle(session, "Hello, how are you?");
+// → "Hello, how are you?"
+
+const title2 = ControlUIClaw.deriveSessionTitle(session);
+// → Falls back to session key prefix like "a1b2c3d4 (2026-04-13)"
+```
 
 ---
 
@@ -340,7 +487,7 @@ All messages over the WebSocket are JSON-encoded frames with a `type` discrimina
   "type": "req",
   "id": "unique-request-id",
   "method": "chat.send",
-  "params": { "sessionKey": "...", "message": "..." }
+  "params": { "sessionKey": "...", "message": "...", "thinking": "medium" }
 }
 ```
 
@@ -361,9 +508,12 @@ All messages over the WebSocket are JSON-encoded frames with a `type` discrimina
 {
   "type": "event",
   "event": "chat",
-  "payload": { "state": "delta", "runId": "...", "message": { ... } },
-  "seq": 42,
-  "stateVersion": { "presence": 5, "health": 3 }
+  "payload": {
+    "state": "final",
+    "runId": "...",
+    "message": { "content": [{ "type": "text", "text": "..." }, { "type": "thinking", "thinking": "..." }] },
+    "usage": { "input": 150, "output": 320, "totalTokens": 470 }
+  }
 }
 ```
 
@@ -401,10 +551,22 @@ for (const session of sessions) {
 ```ts
 const sessionKey = ControlUIClaw.createSessionKey();
 
+// Basic send
 await claw.sendPrompt(sessionKey, "What is the weather in Berlin?");
+
+// With thinking enabled
+await claw.sendPrompt(sessionKey, "Explain quantum entanglement step by step", {
+  thinking: "high",
+});
 ```
 
 Responses arrive asynchronously through `chatEvents()`. The SDK generates a unique idempotency key per send to prevent duplicate processing.
+
+### `SendPromptOptions`
+
+| Field      | Type            | Default                  | Description                                  |
+| ---------- | --------------- | ------------------------ | -------------------------------------------- |
+| `thinking` | `ThinkingLevel` | Inherited from init      | Thinking level override for this message     |
 
 ### Load Chat History
 
@@ -473,7 +635,7 @@ The SDK uses the Web Crypto API's native Ed25519 support when available. On olde
 
 ## Full Integration Example
 
-A complete example showing initialization, health monitoring, chat streaming, and cleanup:
+A complete example showing initialization with thinking, health monitoring, chat streaming with usage tracking, and cleanup:
 
 ```ts
 import { ControlUIClaw } from "@controluiclaw/sdk";
@@ -482,6 +644,7 @@ async function main() {
   const claw = ControlUIClaw.init({
     url: "wss://gateway-host:18789",
     token: "your-token",
+    thinking: "medium",
   });
 
   // Health monitoring
@@ -497,7 +660,7 @@ async function main() {
     }
   });
 
-  // Chat event streaming
+  // Chat event streaming with thinking + usage
   const streamBuffers = new Map<string, string>();
 
   const unsubChat = claw.chatEvents((event) => {
@@ -511,6 +674,21 @@ async function main() {
       case "final":
         streamBuffers.delete(event.runId);
         console.log("\n[complete]");
+
+        // Show thinking if present
+        if (event.thinking) {
+          console.log("\n--- Reasoning ---");
+          console.log(event.thinking);
+        }
+
+        // Show token usage
+        if (event.usage) {
+          console.log("\n--- Usage ---");
+          console.log(`  Input:  ${event.usage.input} tokens`);
+          console.log(`  Output: ${event.usage.output} tokens`);
+          console.log(`  Total:  ${event.usage.totalTokens} tokens`);
+          if (event.usage.cacheRead) console.log(`  Cache:  ${event.usage.cacheRead} read`);
+        }
         break;
       case "error":
         streamBuffers.delete(event.runId);
@@ -530,9 +708,17 @@ async function main() {
     return;
   }
 
-  // Send a message
+  // List sessions with derived titles
+  const sessions = await claw.listSessions();
+  for (const s of sessions) {
+    console.log(`${s.derivedTitle} [${s.status}]`);
+  }
+
+  // Send a message with high thinking
   const sessionKey = ControlUIClaw.createSessionKey();
-  await claw.sendPrompt(sessionKey, "Hello, what can you help me with?");
+  await claw.sendPrompt(sessionKey, "Explain the P vs NP problem", {
+    thinking: "high",
+  });
 
   // Disconnect after 30 seconds
   setTimeout(() => {
@@ -548,6 +734,50 @@ main();
 
 ---
 
+## API Reference Summary
+
+### `ControlUIClaw` Instance Methods
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `connect()` | `Promise<ConnectResult>` | Open WebSocket and complete handshake |
+| `disconnect()` | `void` | Close connection and stop reconnects |
+| `listSessions(options?)` | `Promise<Session[]>` | Fetch sessions with derived titles |
+| `sendPrompt(key, msg, opts?)` | `Promise<void>` | Send a message with optional thinking level |
+| `chatHistory(key, options?)` | `Promise<ChatHistoryResult>` | Load chat history for a session |
+| `sessionHealth(cb)` | `Unsubscribe` | Subscribe to health/connection events |
+| `chatEvents(cb)` | `Unsubscribe` | Subscribe to chat events with thinking + usage |
+| `request<T>(method, params?)` | `Promise<T>` | Generic gateway request |
+
+### `ControlUIClaw` Static Methods
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `init(options)` | `ControlUIClaw` | Create a new client instance |
+| `createSessionKey(prefix?)` | `string` | Generate a unique session key |
+| `extractText(msg)` | `string` | Extract readable text from any message shape |
+| `deriveSessionTitle(session, firstMsg?)` | `string` | Derive a human-readable session title |
+
+### Exported Types
+
+| Type | Description |
+| --- | --- |
+| `InitOptions` | Configuration for `init()` |
+| `ConnectResult` | Result of `connect()` |
+| `HealthEvent` | Health/connection event |
+| `ChatEvent` | Chat event with text, thinking, and usage |
+| `Session` | Session metadata |
+| `SendPromptOptions` | Options for `sendPrompt()` |
+| `TokenUsage` | Token usage counters |
+| `ThinkingLevel` | Thinking level enum |
+| `ChatMessage` | Chat message from history |
+| `ContentBlock` | Message content block (text or thinking) |
+| `ChatHistoryResult` | Chat history response |
+| `ClientInfo` | Client identification |
+| `DeviceIdentity` | Ed25519 device key pair |
+
+---
+
 ## Troubleshooting
 
 **"Already connected or connecting"** — You called `connect()` while the client is already connected or mid-handshake. Call `disconnect()` first if you need to reconnect.
@@ -557,5 +787,11 @@ main();
 **"Request timed out"** — The gateway did not respond within 30 seconds. This may indicate the gateway is overloaded or the network connection is unstable.
 
 **"Ed25519 not available"** — Neither native Web Crypto Ed25519 nor `@noble/ed25519` could be loaded. Install the optional dependency: `npm install @noble/ed25519`.
+
+**Thinking not appearing** — Ensure you set a thinking level either globally (`thinking: "medium"` in `InitOptions`) or per-message (`{ thinking: "high" }` in `sendPrompt`). The gateway must support extended thinking for the configured model.
+
+**Usage showing undefined** — Token usage is provider-dependent. Not all providers report usage on every event. Check `event.usage` on `final` events for the most complete data.
+
+**Session titles showing raw metadata** — The SDK automatically filters out raw JSON/metadata labels and derives titles from the first user message instead. If titles are still not appearing, ensure `listSessions()` has access to `chat.history` for fallback derivation.
 
 **Handshake failures** — Check that your gateway URL is correct and reachable. Verify that `wss://` is used for TLS endpoints and `ws://` only for private LAN addresses. Ensure your auth token is valid if one is required.

@@ -23,16 +23,20 @@
     "README.md"
   ],
   "scripts": {
+    "@test.html": "npm run build && printf '\\n  Test page: http://127.0.0.1:8787/test.html\\n\\n' && npx --yes serve . -l 8787",
+    "@test.html:watch": "npm run build && concurrently -k -n tsc,web -c blue,magenta \"nodemon -q -L -C --watch src --ext ts --exec npm run build\" \"live-server . --port=8787 --open=test.html\"",
     "build": "tsc && node -e \"const fs=require('fs'); for(const ext of ['.js','.js.map','.d.ts','.d.ts.map']){const s='dist/index'+ext,d='dist/controluiclaw'+ext; if(fs.existsSync(s)){fs.copyFileSync(s,d)}}\"",
     "prepare": "npm run build",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build"
   },
-  "dependencies": {},
   "optionalDependencies": {
     "@noble/ed25519": "^2.1.0"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
+    "live-server": "^1.2.2",
+    "nodemon": "^3.1.14",
     "typescript": "^5.5.0"
   },
   "engines": {

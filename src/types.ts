@@ -97,6 +97,46 @@ export interface SessionsListResult {
   sessions: Session[];
 }
 
+// ── Thinking ──────────────────────────────────────────────────────────────
+
+/**
+ * Thinking level for extended reasoning.
+ *
+ * - `"off"`      — no thinking
+ * - `"minimal"`  — very brief internal reasoning
+ * - `"low"`      — light reasoning
+ * - `"medium"`   — moderate reasoning (default when enabled)
+ * - `"high"`     — deep reasoning
+ * - `"xhigh"`    — maximum reasoning depth
+ * - `"adaptive"` — provider picks automatically
+ */
+export type ThinkingLevel =
+  | "off"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "adaptive";
+
+// ── Token Usage ───────────────────────────────────────────────────────────
+
+/** Per-message token usage counters. */
+export interface TokenUsage {
+  /** Input / prompt tokens. */
+  input?: number;
+  /** Output / completion tokens. */
+  output?: number;
+  /** Total tokens (input + output when available). */
+  totalTokens?: number;
+  /** Tokens served from prompt cache. */
+  cacheRead?: number;
+  /** Tokens written to prompt cache. */
+  cacheWrite?: number;
+  /** Provider-reported cost (when available). */
+  cost?: Record<string, unknown>;
+}
+
 // ── Chat Types ─────────────────────────────────────────────────────────────
 
 export interface ChatMessage {
@@ -110,6 +150,7 @@ export interface ChatMessage {
 export interface ContentBlock {
   type?: string;
   text?: string;
+  thinking?: string;
   [key: string]: unknown;
 }
 
@@ -159,6 +200,22 @@ export interface InitOptions {
 
   /** Custom device identity. If omitted, one is auto-generated and cached. */
   deviceIdentity?: DeviceIdentity;
+
+  /**
+   * Default thinking level for all chat.send requests.
+   * Can be overridden per-message via `sendPrompt()` options.
+   * Defaults to `"off"`.
+   */
+  thinking?: ThinkingLevel;
+}
+
+/** Options for `sendPrompt()`. */
+export interface SendPromptOptions {
+  /**
+   * Thinking level for this message.
+   * Overrides the default set in `InitOptions.thinking`.
+   */
+  thinking?: ThinkingLevel;
 }
 
 /** Returned by `connect()` — either success or an error. */
@@ -194,6 +251,12 @@ export interface ChatEvent {
   sessionKey: string;
   /** Extracted text (accumulated for delta, full for final). */
   text: string;
+  /** Thinking / reasoning text (when extended thinking is enabled). */
+  thinking?: string;
+  /** Token usage for this event (typically populated on `final`). */
+  usage?: TokenUsage;
+  /** Model identifier (e.g. "gpt-5.4", "sonnet-4.6") when reported by the gateway. */
+  model?: string;
   /** Raw payload from the gateway for advanced use. */
   raw: Record<string, unknown>;
 }

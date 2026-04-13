@@ -3,198 +3,813 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ControlUIClaw SDK — Test Page</title>
+  <title>ControlUIClaw SDK — Chat</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #0c0a1a; color: #e0e0e0; padding: 2rem; max-width: 800px; margin: 0 auto; }
-    h1 { font-size: 1.4rem; margin-bottom: 1rem; color: #c4b5fd; }
-    .field { margin-bottom: 0.75rem; display: flex; gap: 0.5rem; align-items: center; }
-    .field label { min-width: 80px; font-size: 0.85rem; color: #b0a8cc; }
-    .field input { flex: 1; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid #2a2545; background: #1a1530; color: #e0e0e0; font-size: 0.85rem; }
-    button { padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; font-size: 0.85rem; color: #fff; }
-    .btn-connect { background: #6c5ce7; } .btn-connect:hover { background: #7c6cf7; }
-    .btn-disconnect { background: #dc2626; }
-    .btn-send { background: #22c55e; }
-    .btn-send:disabled, .btn-connect:disabled { opacity: 0.4; cursor: default; }
-    .actions { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
-    .status { font-size: 0.8rem; color: #6b6190; margin-bottom: 1rem; }
-    .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
-    .status .dot.on { background: #22c55e; } .status .dot.off { background: #555; }
-    #log { background: #1a1530; border: 1px solid #2a2545; border-radius: 8px; padding: 1rem; height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
-    .log-user { color: #a78bfa; } .log-assistant { color: #c4e0a5; } .log-system { color: #6b6190; font-style: italic; } .log-event { color: #fbbf24; }
+    :root {
+      --sidebar-w: 280px;
+      --bg: #f9f9f9;
+      --bg-sidebar: #1a1a1a;
+      --bg-sidebar-hover: #2a2a2a;
+      --bg-sidebar-active: #333;
+      --bg-input: #ffffff;
+      --bg-user-msg: #f0f0f0;
+      --bg-assist-msg: #ffffff;
+      --bg-thinking: #faf5ff;
+      --text: #1a1a1a;
+      --text-secondary: #666;
+      --text-sidebar: #e0e0e0;
+      --text-sidebar-dim: #888;
+      --border: #e5e5e5;
+      --accent: #7c5cfc;
+      --accent-hover: #6a4ce8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    }
+    html, body { height: 100%; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); display: flex; overflow: hidden; }
+
+    /* ── Sidebar ─────────────────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-w); min-width: var(--sidebar-w); height: 100vh;
+      background: var(--bg-sidebar); display: flex; flex-direction: column;
+      border-right: 1px solid #333;
+    }
+    .sidebar-header {
+      padding: 16px 16px 12px; border-bottom: 1px solid #333;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .sidebar-header .logo {
+      width: 28px; height: 28px; border-radius: 8px; background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 14px; color: #fff;
+    }
+    .sidebar-header h1 { font-size: 15px; font-weight: 600; color: #fff; }
+    .sidebar-header .version { font-size: 11px; color: var(--text-sidebar-dim); margin-left: auto; }
+
+    .connect-section { padding: 12px 16px; border-bottom: 1px solid #333; }
+    .connect-section label { font-size: 11px; color: var(--text-sidebar-dim); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
+    .connect-section input {
+      width: 100%; padding: 7px 10px; border-radius: 6px; border: 1px solid #444;
+      background: #2a2a2a; color: #e0e0e0; font-size: 13px; margin-bottom: 8px;
+      outline: none; transition: border-color 0.15s;
+    }
+    .connect-section input:focus { border-color: var(--accent); }
+    .connect-row { display: flex; gap: 6px; margin-top: 4px; }
+    .btn {
+      padding: 7px 14px; border-radius: 6px; border: none; cursor: pointer;
+      font-weight: 500; font-size: 12px; color: #fff; transition: background 0.15s, opacity 0.15s;
+    }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+    .btn-connect { background: var(--accent); flex: 1; }
+    .btn-connect:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-disconnect { background: #444; }
+    .btn-disconnect:hover { background: #555; }
+
+    .status-bar {
+      padding: 8px 16px; display: flex; align-items: center; gap: 6px;
+      border-bottom: 1px solid #333;
+    }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .status-dot.off { background: #555; }
+    .status-dot.on { background: var(--green); }
+    .status-dot.connecting { background: var(--yellow); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .status-text { font-size: 12px; color: var(--text-sidebar-dim); }
+
+    .sessions-header {
+      padding: 12px 16px 8px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .sessions-header span { font-size: 11px; color: var(--text-sidebar-dim); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+    .btn-icon {
+      width: 28px; height: 28px; border-radius: 6px; border: none; cursor: pointer;
+      background: transparent; color: var(--text-sidebar-dim); font-size: 16px;
+      display: flex; align-items: center; justify-content: center; transition: background 0.15s;
+    }
+    .btn-icon:hover { background: var(--bg-sidebar-hover); color: #fff; }
+
+    .session-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
+    .session-list::-webkit-scrollbar { width: 4px; }
+    .session-list::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+    .session-item {
+      padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 2px;
+      transition: background 0.15s;
+    }
+    .session-item:hover { background: var(--bg-sidebar-hover); }
+    .session-item.active { background: var(--bg-sidebar-active); }
+    .session-item .title {
+      font-size: 13px; color: var(--text-sidebar); white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; font-weight: 500;
+    }
+    .session-item .meta {
+      font-size: 11px; color: var(--text-sidebar-dim); margin-top: 2px;
+      display: flex; gap: 8px; align-items: center;
+    }
+    .session-item .meta .status-badge {
+      padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-badge.running { background: #22c55e22; color: var(--green); }
+    .status-badge.idle { background: #f59e0b22; color: var(--yellow); }
+    .status-badge.error { background: #ef444422; color: var(--red); }
+
+    .sidebar-footer {
+      padding: 12px 16px; border-top: 1px solid #333; font-size: 11px;
+      color: var(--text-sidebar-dim); text-align: center;
+    }
+
+    /* ── Main Chat Area ──────────────────────────────────────── */
+    .main { flex: 1; display: flex; flex-direction: column; height: 100vh; }
+
+    .chat-header {
+      padding: 14px 24px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; background: #fff; flex-shrink: 0;
+    }
+    .chat-header .session-title { font-size: 15px; font-weight: 600; }
+    .chat-header .session-key { font-size: 12px; color: var(--text-secondary); font-family: var(--mono); }
+    .chat-header .thinking-select {
+      margin-left: auto; display: flex; align-items: center; gap: 6px;
+    }
+    .chat-header .thinking-select label { font-size: 12px; color: var(--text-secondary); }
+    .chat-header .thinking-select select {
+      padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border);
+      background: #fff; font-size: 12px; color: var(--text); outline: none;
+    }
+
+    .messages {
+      flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px;
+    }
+    .messages::-webkit-scrollbar { width: 6px; }
+    .messages::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+    .msg {
+      max-width: 720px; width: 100%; margin: 0 auto; padding: 0 24px;
+      animation: fadeIn 0.3s ease-out;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .msg .role-label {
+      font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
+    }
+    .msg.user .role-label { color: var(--accent); }
+    .msg.assistant .role-label { color: #16a34a; }
+    .msg.system .role-label { color: var(--text-secondary); }
+
+    .msg .bubble {
+      font-size: 14px; line-height: 1.65; white-space: pre-wrap; word-break: break-word;
+    }
+    .msg.user .bubble { color: var(--text); }
+    .msg.assistant .bubble { color: var(--text); }
+    .msg.system .bubble { color: var(--text-secondary); font-style: italic; font-size: 13px; }
+
+    .msg .thinking-block {
+      margin-top: 8px; padding: 10px 14px; border-radius: 8px; background: var(--bg-thinking);
+      border-left: 3px solid #c084fc; font-size: 13px; color: #6b21a8; line-height: 1.6;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .msg .thinking-block .thinking-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+      color: #9333ea; margin-bottom: 4px;
+    }
+
+    .msg .meta-line {
+      margin-top: 10px; display: flex; align-items: center; gap: 2px;
+      font-size: 12px; color: #999; font-family: var(--font);
+    }
+    .msg .meta-line .meta-role {
+      font-weight: 600; color: #888; margin-right: 2px;
+    }
+    .msg .meta-line .meta-sep {
+      margin: 0 6px; color: #ccc;
+    }
+    .msg .meta-line .meta-val {
+      font-family: var(--mono); font-size: 11px; color: #888;
+    }
+    .msg .meta-line .meta-val.up { color: #7c5cfc; }
+    .msg .meta-line .meta-val.down { color: #16a34a; }
+    .msg .meta-line .meta-val.ctx { color: #f59e0b; }
+    .msg .meta-line .meta-val.model { color: #666; font-weight: 500; }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: var(--text-secondary); gap: 8px;
+    }
+    .empty-state .icon { font-size: 48px; opacity: 0.3; }
+    .empty-state p { font-size: 14px; }
+
+    /* ── Input Area ──────────────────────────────────────────── */
+    .input-area {
+      padding: 16px 24px 20px; border-top: 1px solid var(--border); background: #fff; flex-shrink: 0;
+    }
+    .input-row {
+      max-width: 720px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end;
+    }
+    .input-row textarea {
+      flex: 1; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--bg-input); font-size: 14px; font-family: var(--font); color: var(--text);
+      resize: none; outline: none; min-height: 44px; max-height: 160px; line-height: 1.5;
+      transition: border-color 0.15s;
+    }
+    .input-row textarea:focus { border-color: var(--accent); }
+    .input-row textarea::placeholder { color: #aaa; }
+    .btn-send {
+      width: 40px; height: 40px; border-radius: 10px; background: var(--accent);
+      border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, opacity 0.15s; flex-shrink: 0;
+    }
+    .btn-send:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-send:disabled { opacity: 0.3; cursor: default; }
+    .btn-send svg { width: 18px; height: 18px; }
+
+    /* ── Event Log (collapsible) ─────────────────────────────── */
+    .event-log-toggle {
+      padding: 6px 16px; background: #f5f5f5; border-top: 1px solid var(--border);
+      font-size: 11px; color: var(--text-secondary); cursor: pointer;
+      display: flex; align-items: center; gap: 6px; user-select: none; flex-shrink: 0;
+    }
+    .event-log-toggle:hover { background: #eee; }
+    .event-log-toggle .arrow { transition: transform 0.2s; display: inline-block; }
+    .event-log-toggle.open .arrow { transform: rotate(90deg); }
+    .event-log {
+      max-height: 0; overflow: hidden; transition: max-height 0.3s ease;
+      background: #1a1a2e; flex-shrink: 0;
+    }
+    .event-log.open { max-height: 200px; }
+    .event-log-inner {
+      padding: 10px 16px; font-family: var(--mono); font-size: 11px; color: #a0a0c0;
+      line-height: 1.6; overflow-y: auto; max-height: 200px; white-space: pre-wrap; word-break: break-all;
+    }
+    .event-log-inner .ev-connect { color: var(--green); }
+    .event-log-inner .ev-disconnect { color: var(--red); }
+    .event-log-inner .ev-event { color: var(--yellow); }
+    .event-log-inner .ev-error { color: #f87171; }
+    .event-log-inner .ev-info { color: #818cf8; }
   </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-<h1>ControlUIClaw SDK Test</h1>
+<!-- ── Sidebar ──────────────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">C</div>
+    <h1>ControlUIClaw</h1>
+    <span class="version">SDK</span>
+  </div>
 
-<div class="field">
-  <label>Gateway:</label>
-  <input id="url" value="wss://localhost:18789" />
+  <div class="connect-section">
+    <label>Gateway URL</label>
+    <input id="url" value="wss://localhost:18789" spellcheck="false" />
+    <label>Token</label>
+    <input id="token" type="password" placeholder="Optional" />
+    <div class="connect-row">
+      <button class="btn btn-connect" id="btnConnect">Connect</button>
+      <button class="btn btn-disconnect" id="btnDisconnect">&#x2715;</button>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span class="status-dot off" id="dot"></span>
+    <span class="status-text" id="statusLabel">Disconnected</span>
+  </div>
+
+  <div class="sessions-header">
+    <span>Sessions</span>
+    <button class="btn-icon" id="btnNewSession" title="New session">+</button>
+  </div>
+
+  <div class="session-list" id="sessionList"></div>
+
+  <div class="sidebar-footer">ControlUIClaw SDK Test Interface</div>
+</aside>
+
+<!-- ── Main ─────────────────────────────────────────────────── -->
+<div class="main">
+  <div class="chat-header">
+    <div>
+      <div class="session-title" id="chatTitle">New Conversation</div>
+      <div class="session-key" id="chatSessionKey">No session selected</div>
+    </div>
+    <div class="thinking-select">
+      <label for="thinkingLevel">Thinking:</label>
+      <select id="thinkingLevel">
+        <option value="off">Off</option>
+        <option value="minimal">Minimal</option>
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+        <option value="xhigh">Max</option>
+        <option value="adaptive">Adaptive</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="messages" id="messages">
+    <div class="empty-state" id="emptyState">
+      <div class="icon">&#9672;</div>
+      <p>Connect to a gateway and start chatting</p>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div class="input-row">
+      <textarea id="msgInput" placeholder="Send a message..." rows="1" disabled></textarea>
+      <button class="btn-send" id="btnSend" disabled title="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="event-log-toggle" id="logToggle">
+    <span class="arrow">&#9654;</span> Event Log
+  </div>
+  <div class="event-log" id="eventLog">
+    <div class="event-log-inner" id="logInner"></div>
+  </div>
 </div>
-<div class="field">
-  <label>Token:</label>
-  <input id="token" type="password" placeholder="(optional)" />
-</div>
 
-<div class="actions">
-  <button class="btn-connect" id="btnConnect">Connect</button>
-  <button class="btn-disconnect" id="btnDisconnect">Disconnect</button>
-  <button class="btn-send" id="btnSessions">List Sessions</button>
-</div>
+<script>
+  // ── DOM refs ──────────────────────────────────────────────
+  const $ = (id) => document.getElementById(id);
+  const dot = $("dot");
+  const statusLabel = $("statusLabel");
+  const btnSend = $("btnSend");
+  const msgInput = $("msgInput");
+  const messagesEl = $("messages");
+  const emptyState = $("emptyState");
+  const sessionList = $("sessionList");
+  const chatTitle = $("chatTitle");
+  const chatSessionKey = $("chatSessionKey");
+  const thinkingLevel = $("thinkingLevel");
+  const logToggle = $("logToggle");
+  const eventLog = $("eventLog");
+  const logInner = $("logInner");
 
-<div class="status">
-  <span class="dot off" id="dot"></span>
-  <span id="statusLabel">Disconnected</span>
-</div>
-
-<div class="field">
-  <label>Session:</label>
-  <input id="sessionKey" placeholder="auto-generated on connect" />
-</div>
-<div class="field" style="margin-bottom: 1rem;">
-  <input id="msgInput" placeholder="Type a message..." style="flex:1" />
-  <button class="btn-send" id="btnSend" disabled>Send</button>
-</div>
-
-<div id="log"></div>
-
-<script type="module">
-  import { ControlUIClaw } from "./dist/controluiclaw.js";
-
-  const logEl = document.getElementById("log");
-  const dot = document.getElementById("dot");
-  const statusLabel = document.getElementById("statusLabel");
-  const btnSend = document.getElementById("btnSend");
-  const msgInput = document.getElementById("msgInput");
-  const sessionKeyInput = document.getElementById("sessionKey");
-
+  let ControlUIClaw = null; // loaded dynamically
   let claw = null;
   let unsubHealth = null;
   let unsubChat = null;
+  let activeSessionKey = null;
+  let sessions = [];
+  let sdkAvailable = false;
 
-  function log(cls, text) {
+  // ── Helpers ───────────────────────────────────────────────
+  function escapeHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function fmtNum(n) {
+    if (n === undefined || n === null) return "\u2014";
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+    if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
+    return n.toLocaleString();
+  }
+
+  // ── Event log ─────────────────────────────────────────────
+  logToggle.addEventListener("click", () => {
+    logToggle.classList.toggle("open");
+    eventLog.classList.toggle("open");
+  });
+
+  function logEvent(cls, text) {
     const span = document.createElement("span");
-    span.className = `log-${cls}`;
-    span.textContent = text + "\n";
-    logEl.appendChild(span);
-    logEl.scrollTop = logEl.scrollHeight;
+    span.className = "ev-" + cls;
+    span.textContent = "[" + new Date().toLocaleTimeString() + "] " + text + "\n";
+    logInner.appendChild(span);
+    logInner.scrollTop = logInner.scrollHeight;
   }
 
-  function setStatus(connected) {
-    dot.className = `dot ${connected ? "on" : "off"}`;
-    statusLabel.textContent = connected ? "Connected" : "Disconnected";
+  // ── Status ────────────────────────────────────────────────
+  function setStatus(state) {
+    dot.className = "status-dot " + (state || "off");
+    const labels = { on: "Connected", connecting: "Connecting...", off: "Disconnected", "": "Disconnected" };
+    statusLabel.textContent = labels[state] || "Disconnected";
+    const connected = state === "on";
     btnSend.disabled = !connected;
+    msgInput.disabled = !connected;
+    if (connected) msgInput.focus();
   }
 
-  // ── Connect ──────────────────────────────────────────────────────
-  document.getElementById("btnConnect").addEventListener("click", async () => {
-    // Cleanup previous
-    unsubHealth?.();
-    unsubChat?.();
-    claw?.disconnect();
+  // ── Render messages ───────────────────────────────────────
 
-    const url = document.getElementById("url").value.trim();
-    const token = document.getElementById("token").value.trim() || undefined;
+  /** Build the compact metadata line:  Assistant · 19:02 · ↑30.6k · ↓9 · 15% ctx · gpt-5.4 */
+  function buildMetaLine(role, opts) {
+    opts = opts || {};
+    var usage = opts.usage;
+    var model = opts.model;
+    var time = opts.time;
+    var roleLabel = { user: "You", assistant: "Assistant", system: "System" }[role] || role;
+    var ts = time || new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-    // 1. init
-    claw = ControlUIClaw.init({ url, token });
+    var h = '<div class="meta-line">';
+    h += '<span class="meta-role">' + roleLabel + '</span>';
+    h += '<span class="meta-sep">&middot;</span><span class="meta-val">' + ts + '</span>';
 
-    // 2. sessionHealth — connection + error events
-    unsubHealth = claw.sessionHealth((event) => {
-      log("event", `[${event.code}] ${event.message}`);
-      if (event.code === "connected") setStatus(true);
-      if (event.code === "disconnected") setStatus(false);
+    if (usage) {
+      if (usage.input !== undefined) {
+        h += '<span class="meta-sep">&middot;</span><span class="meta-val up">&uarr;' + fmtNum(usage.input) + '</span>';
+      }
+      if (usage.output !== undefined) {
+        h += '<span class="meta-sep">&middot;</span><span class="meta-val down">&darr;' + fmtNum(usage.output) + '</span>';
+      }
+      if (usage.totalTokens !== undefined) {
+        var pct = Math.round((usage.totalTokens / 200000) * 100);
+        h += '<span class="meta-sep">&middot;</span><span class="meta-val ctx">' + pct + '% ctx</span>';
+      }
+    }
+
+    if (model) {
+      h += '<span class="meta-sep">&middot;</span><span class="meta-val model">' + escapeHtml(model) + '</span>';
+    }
+
+    h += '</div>';
+    return h;
+  }
+
+  /** Extract model name from raw gateway payload */
+  function extractModel(raw) {
+    if (!raw) return null;
+    return raw.model || raw.modelId || raw.modelName
+      || (raw.message && (raw.message.model || raw.message.modelId))
+      || null;
+  }
+
+  function addMessage(role, text, opts) {
+    opts = opts || {};
+    emptyState.style.display = "none";
+    var msg = document.createElement("div");
+    msg.className = "msg " + role;
+    if (opts.id) msg.id = opts.id;
+
+    var detectedModel = opts.model || extractModel(opts.raw);
+
+    var html = '<div class="bubble">' + escapeHtml(text) + '</div>';
+
+    if (opts.thinking) {
+      html += '<div class="thinking-block"><div class="thinking-label">Thinking</div>' + escapeHtml(opts.thinking) + '</div>';
+    }
+
+    html += buildMetaLine(role, { usage: opts.usage, model: detectedModel, time: opts.time });
+
+    msg.innerHTML = html;
+    messagesEl.appendChild(msg);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return msg;
+  }
+
+  function updateStreamingMessage(runId, text, thinking) {
+    var el = document.getElementById("stream-" + runId);
+    if (!el) {
+      emptyState.style.display = "none";
+      el = document.createElement("div");
+      el.className = "msg assistant";
+      el.id = "stream-" + runId;
+      el.innerHTML = '<div class="bubble"></div><div class="meta-line"><span class="meta-role">Assistant</span><span class="meta-sep">&middot;</span><span class="meta-val">streaming...</span></div>';
+      messagesEl.appendChild(el);
+    }
+    var bubble = el.querySelector(".bubble");
+    bubble.textContent = text;
+
+    if (thinking) {
+      var tb = el.querySelector(".thinking-block");
+      if (!tb) {
+        tb = document.createElement("div");
+        tb.className = "thinking-block";
+        tb.innerHTML = '<div class="thinking-label">Thinking</div><span class="thinking-text"></span>';
+        var metaLine = el.querySelector(".meta-line");
+        el.insertBefore(tb, metaLine);
+      }
+      tb.querySelector(".thinking-text").textContent = thinking;
+    }
+
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return el;
+  }
+
+  function finalizeStreamingMessage(runId, usage, model, raw) {
+    var el = document.getElementById("stream-" + runId);
+    if (!el) return;
+    el.removeAttribute("id");
+
+    var oldMeta = el.querySelector(".meta-line");
+    if (oldMeta) oldMeta.remove();
+
+    var resolvedModel = model || extractModel(raw);
+    el.insertAdjacentHTML("beforeend", buildMetaLine("assistant", { usage: usage, model: resolvedModel }));
+  }
+
+  // ── Session list rendering ────────────────────────────────
+  function renderSessions() {
+    sessionList.innerHTML = "";
+    for (var i = 0; i < sessions.length; i++) {
+      var s = sessions[i];
+      var item = document.createElement("div");
+      item.className = "session-item" + (s.key === activeSessionKey ? " active" : "");
+
+      var title = s.displayName || s.derivedTitle || s.label || s.key;
+      var statusCls = s.status === "running" ? "running" : s.status === "error" ? "error" : "idle";
+      var date = s.updatedAt ? new Date(s.updatedAt).toLocaleDateString() : "";
+
+      item.innerHTML = '<div class="title">' + escapeHtml(title) + '</div>' +
+        '<div class="meta"><span class="status-badge ' + statusCls + '">' + (s.status || "idle") + '</span><span>' + date + '</span></div>';
+      item.addEventListener("click", (function(sess) { return function() { selectSession(sess); }; })(s));
+      sessionList.appendChild(item);
+    }
+  }
+
+  function selectSession(s) {
+    activeSessionKey = s.key;
+    chatTitle.textContent = s.displayName || s.derivedTitle || s.label || "Conversation";
+    chatSessionKey.textContent = s.key;
+    renderSessions();
+    loadHistory(s.key);
+  }
+
+  async function loadHistory(sessionKey) {
+    messagesEl.innerHTML = "";
+    emptyState.style.display = "none";
+
+    try {
+      var history = await claw.chatHistory(sessionKey, { limit: 50 });
+      var msgs = (history && history.messages) || (history && history.items) || [];
+      if (msgs.length === 0) {
+        messagesEl.innerHTML = '<div class="empty-state" style="display:flex"><div class="icon">&#9672;</div><p>No messages yet</p></div>';
+        return;
+      }
+      for (var i = 0; i < msgs.length; i++) {
+        var m = msgs[i];
+        var role = m.role === "user" || m.role === "human" ? "user" : m.role === "assistant" ? "assistant" : "system";
+        var text = ControlUIClaw.extractText(m);
+        addMessage(role, text);
+      }
+    } catch (err) {
+      addMessage("system", "Failed to load history: " + err.message);
+    }
+  }
+
+  async function refreshSessions() {
+    if (!claw || !claw.isConnected) return;
+    try {
+      sessions = await claw.listSessions();
+      renderSessions();
+    } catch (err) {
+      logEvent("error", "Session list failed: " + err.message);
+    }
+  }
+
+  // ── Demo mode — sample data shown on page load ────────────
+  function loadDemoData() {
+    var demoSessions = [
+      { title: "Explain quantum entanglement", status: "running", date: "4/13/2026", active: true },
+      { title: "Debug SDK connection handshake", status: "idle", date: "4/12/2026" },
+      { title: "Fix Chrome extension relay support", status: "idle", date: "4/11/2026" },
+      { title: "ControlUIClaw-SDK - Distribute", status: "idle", date: "4/10/2026" },
+      { title: "Create sample npm project", status: "idle", date: "4/9/2026" },
+      { title: "Read WebSocket from OpenClaw", status: "idle", date: "4/8/2026" },
+    ];
+
+    sessionList.innerHTML = "";
+    for (var i = 0; i < demoSessions.length; i++) {
+      var s = demoSessions[i];
+      var item = document.createElement("div");
+      item.className = "session-item" + (s.active ? " active" : "");
+      var cls = s.status === "running" ? "running" : "idle";
+      item.innerHTML = '<div class="title">' + escapeHtml(s.title) + '</div>' +
+        '<div class="meta"><span class="status-badge ' + cls + '">' + s.status + '</span><span>' + s.date + '</span></div>';
+      sessionList.appendChild(item);
+    }
+
+    // Show connected status in demo mode
+    dot.className = "status-dot on";
+    statusLabel.textContent = "Connected";
+
+    chatTitle.textContent = "Explain quantum entanglement";
+    chatSessionKey.textContent = "agent:main:a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    emptyState.style.display = "none";
+
+    addMessage("user", "Explain quantum entanglement in simple terms", { time: "19:01" });
+
+    addMessage("assistant", "HEARTBEAT_OK", {
+      time: "19:02",
+      usage: { input: 30592, output: 9, totalTokens: 30601 },
+      model: "gpt-5.4",
     });
 
-    // 3. chatEvents — streaming, final, error, aborted
-    const streamBuffers = new Map();
-    unsubChat = claw.chatEvents((event) => {
+    addMessage("user", "Can you explain it more deeply? Use step by step reasoning.", { time: "19:02" });
+
+    addMessage("assistant",
+      "Quantum entanglement is a phenomenon where two or more particles become interconnected in such a way that the quantum state of each particle cannot be described independently of the others, regardless of the distance separating them.\n\nWhen you measure one particle\u2019s property (like spin), you instantly know the corresponding property of its entangled partner. Einstein famously called this \u201Cspooky action at a distance.\u201D\n\nKey points:\n- Entangled particles share a quantum state\n- Measurement of one instantly affects the other\n- This holds regardless of distance between particles\n- It does not allow faster-than-light communication\n- It is the basis for quantum computing and quantum cryptography",
+      {
+        time: "19:02",
+        thinking: "The user wants a deeper explanation with step-by-step reasoning. Let me break down quantum entanglement from first principles.\n\nI should cover: what entanglement is at the quantum level, how it arises (e.g. parametric down-conversion), the EPR paradox, Bell\u2019s theorem proving it\u2019s not hidden variables, and practical applications.\n\nI\u2019ll keep it accessible but go deeper than the surface-level explanation.",
+        usage: { input: 30624, output: 847, totalTokens: 31471, cacheRead: 28800 },
+        model: "gpt-5.4",
+      }
+    );
+
+    // Demo event log entries
+    logInner.innerHTML =
+      '<span class="ev-connect">[19:01:42] [connected] Connected \u2014 protocol v3, server 2026.4.1</span>\n' +
+      '<span class="ev-info">[19:02:05] [final] run=a8f3bc21 tokens={"input":30592,"output":9,"totalTokens":30601}</span>\n' +
+      '<span class="ev-info">[19:02:14] [final] run=c4e1d702 tokens={"input":30624,"output":847,"totalTokens":31471,"cacheRead":28800}</span>\n';
+
+    // Show event log open by default in demo mode
+    logToggle.classList.add("open");
+    eventLog.classList.add("open");
+  }
+
+  function clearDemoData() {
+    messagesEl.innerHTML = '<div class="empty-state" id="emptyState" style="display:flex"><div class="icon">&#9672;</div><p>Connect to a gateway and start chatting</p></div>';
+    sessionList.innerHTML = "";
+    logInner.innerHTML = "";
+    chatTitle.textContent = "New Conversation";
+    chatSessionKey.textContent = "No session selected";
+  }
+
+  // ── Load demo data immediately ────────────────────────────
+  loadDemoData();
+
+  // ── Auto-resize textarea ──────────────────────────────────
+  function autoResizeTextarea() {
+    msgInput.style.height = "auto";
+    msgInput.style.height = Math.min(msgInput.scrollHeight, 160) + "px";
+  }
+  msgInput.addEventListener("input", autoResizeTextarea);
+
+  // ── SDK-dependent features (loaded dynamically) ───────────
+  async function initSDK() {
+    try {
+      var mod = await import("./dist/controluiclaw.js");
+      ControlUIClaw = mod.ControlUIClaw;
+      sdkAvailable = true;
+      logEvent("info", "SDK loaded successfully");
+    } catch (err) {
+      logEvent("error", "SDK not available: " + err.message + " — running in demo mode");
+    }
+  }
+
+  // ── Connect ───────────────────────────────────────────────
+  $("btnConnect").addEventListener("click", async function() {
+    if (!sdkAvailable) {
+      await initSDK();
+      if (!sdkAvailable) {
+        logEvent("error", "Cannot connect — SDK not loaded. Ensure dist/controluiclaw.js is built.");
+        return;
+      }
+    }
+
+    if (unsubHealth) unsubHealth();
+    if (unsubChat) unsubChat();
+    if (claw) claw.disconnect();
+
+    var url = $("url").value.trim();
+    var token = $("token").value.trim() || undefined;
+
+    clearDemoData();
+    claw = ControlUIClaw.init({ url: url, token: token, thinking: thinkingLevel.value });
+    setStatus("connecting");
+
+    // Health events
+    unsubHealth = claw.sessionHealth(async function(event) {
+      var cls = event.code === "connected" ? "connect"
+        : event.code === "disconnected" ? "disconnect"
+        : event.code === "error" ? "error" : "event";
+      logEvent(cls, "[" + event.code + "] " + event.message);
+
+      if (event.code === "connected") setStatus("on");
+      if (event.code === "disconnected") setStatus("");
+      if (event.code === "reconnecting") setStatus("connecting");
+      if (event.code === "sessions_changed") await refreshSessions();
+    });
+
+    // Chat events — streaming with thinking + usage
+    var streamBuffers = new Map();
+    var thinkingBuffers = new Map();
+
+    unsubChat = claw.chatEvents(function(event) {
+      if (event.sessionKey !== activeSessionKey) return;
+
+      // Log every event type for debugging
+      if (event.type !== "stream") {
+        logEvent("event", "[" + event.type + "] run=" + (event.runId || "").slice(0, 8) +
+          " model=" + (event.model || "—") +
+          " usage=" + JSON.stringify(event.usage || null) +
+          " raw.keys=" + Object.keys(event.raw || {}).join(","));
+      }
+
       switch (event.type) {
         case "stream": {
-          const buf = (streamBuffers.get(event.runId) ?? "") + event.text;
+          var buf = (streamBuffers.get(event.runId) || "") + event.text;
           streamBuffers.set(event.runId, buf);
-          let el = document.getElementById(`run-${event.runId}`);
-          if (!el) {
-            el = document.createElement("span");
-            el.id = `run-${event.runId}`;
-            el.className = "log-assistant";
-            logEl.appendChild(el);
+          if (event.thinking) {
+            var tb = (thinkingBuffers.get(event.runId) || "") + event.thinking;
+            thinkingBuffers.set(event.runId, tb);
           }
-          el.textContent = `assistant: ${buf}\n`;
-          logEl.scrollTop = logEl.scrollHeight;
+          updateStreamingMessage(event.runId, buf, thinkingBuffers.get(event.runId));
           break;
         }
         case "final":
           if (!streamBuffers.has(event.runId) && event.text) {
-            log("assistant", `assistant: ${event.text}`);
+            addMessage("assistant", event.text, { thinking: event.thinking, usage: event.usage, model: event.model, raw: event.raw });
+          } else {
+            finalizeStreamingMessage(event.runId, event.usage, event.model, event.raw);
           }
           streamBuffers.delete(event.runId);
+          thinkingBuffers.delete(event.runId);
+          logEvent("info", "[final] run=" + event.runId.slice(0, 8) +
+            " model=" + (event.model || "—") +
+            " tokens=" + JSON.stringify(event.usage || {}) +
+            " raw.keys=" + Object.keys(event.raw || {}).join(","));
           break;
         case "error":
-          log("system", `Chat error: ${event.text}`);
+          addMessage("system", "Error: " + event.text);
           streamBuffers.delete(event.runId);
+          thinkingBuffers.delete(event.runId);
           break;
         case "aborted":
-          log("system", "[run aborted]");
+          addMessage("system", "Run was aborted");
           streamBuffers.delete(event.runId);
+          thinkingBuffers.delete(event.runId);
           break;
       }
     });
 
-    // 4. connect
-    const result = await claw.connect();
+    // Connect
+    var result = await claw.connect();
     if (!result.ok) {
-      log("system", `Connection failed: ${result.error?.message}`);
+      logEvent("error", "Connection failed: " + (result.error && result.error.message));
+      setStatus("");
       return;
     }
 
-    if (!sessionKeyInput.value.trim()) {
-      sessionKeyInput.value = ControlUIClaw.createSessionKey();
+    // Create default session if none active
+    if (!activeSessionKey) {
+      activeSessionKey = ControlUIClaw.createSessionKey();
+      chatTitle.textContent = "New Conversation";
+      chatSessionKey.textContent = activeSessionKey;
     }
+
+    await refreshSessions();
   });
 
-  // ── Disconnect ───────────────────────────────────────────────────
-  document.getElementById("btnDisconnect").addEventListener("click", () => {
-    unsubHealth?.();
-    unsubChat?.();
-    claw?.disconnect();
+  // ── Disconnect ────────────────────────────────────────────
+  $("btnDisconnect").addEventListener("click", function() {
+    if (unsubHealth) unsubHealth();
+    if (unsubChat) unsubChat();
+    if (claw) claw.disconnect();
     claw = null;
-    setStatus(false);
+    setStatus("");
   });
 
-  // ── List Sessions ────────────────────────────────────────────────
-  document.getElementById("btnSessions").addEventListener("click", async () => {
-    if (!claw?.isConnected) { log("system", "Not connected"); return; }
-    try {
-      const sessions = await claw.listSessions();
-      log("event", `Found ${sessions.length} session(s):`);
-      for (const s of sessions) {
-        log("event", `  ${s.derivedTitle || s.label || s.key} [${s.status ?? "?"}]`);
-      }
-    } catch (err) {
-      log("system", `Failed: ${err.message}`);
-    }
+  // ── New Session ───────────────────────────────────────────
+  $("btnNewSession").addEventListener("click", function() {
+    if (!sdkAvailable || !ControlUIClaw) return;
+    activeSessionKey = ControlUIClaw.createSessionKey();
+    chatTitle.textContent = "New Conversation";
+    chatSessionKey.textContent = activeSessionKey;
+    messagesEl.innerHTML = '<div class="empty-state" id="emptyState" style="display:flex"><div class="icon">&#9672;</div><p>Start a new conversation</p></div>';
+    renderSessions();
   });
 
-  // ── Send Prompt ──────────────────────────────────────────────────
+  // ── Send ──────────────────────────────────────────────────
   async function send() {
-    if (!claw?.isConnected) return;
-    const text = msgInput.value.trim();
+    if (!claw || !claw.isConnected) return;
+    var text = msgInput.value.trim();
     if (!text) return;
-    const sessionKey = sessionKeyInput.value.trim();
-    if (!sessionKey) { log("system", "No session key"); return; }
+    if (!activeSessionKey) {
+      activeSessionKey = ControlUIClaw.createSessionKey();
+      chatSessionKey.textContent = activeSessionKey;
+    }
+
     msgInput.value = "";
-    log("user", `you: ${text}`);
+    autoResizeTextarea();
+    addMessage("user", text);
+
     try {
-      await claw.sendPrompt(sessionKey, text);
+      var thinking = thinkingLevel.value;
+      await claw.sendPrompt(activeSessionKey, text, {
+        thinking: thinking !== "off" ? thinking : undefined,
+      });
     } catch (err) {
-      log("system", `Send failed: ${err.message}`);
+      addMessage("system", "Send failed: " + err.message);
     }
   }
 
   btnSend.addEventListener("click", send);
-  msgInput.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+  msgInput.addEventListener("keydown", function(e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+
+  // Try loading SDK in background (non-blocking)
+  initSDK();
 </script>
 
 </body>

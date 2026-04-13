@@ -30,4 +30,7 @@ export type {
   ClientInfo,
   DeviceIdentity,
   HelloPayload,
+  SendPromptOptions,
+  TokenUsage,
+  ThinkingLevel,
 } from "./types.js";

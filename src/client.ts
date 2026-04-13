@@ -19,6 +19,9 @@ import type {
   Session,
   SessionsListResult,
   ChatHistoryResult,
+  SendPromptOptions,
+  TokenUsage,
+  ThinkingLevel,
 } from "./types.js";
 
 import {
@@ -51,9 +54,116 @@ function extractText(msg: unknown): string {
   return JSON.stringify(msg);
 }
 
+/** Extracts thinking/reasoning text from a chat message payload. */
+function extractThinking(msg: unknown): string {
+  if (!msg || typeof msg !== "object") return "";
+  const m = msg as Record<string, any>;
+
+  // Direct thinking field on the message
+  if (typeof m.thinking === "string") return m.thinking;
+
+  // Content blocks may contain { type: "thinking", thinking: "..." }
+  if (Array.isArray(m.content)) {
+    return m.content
+      .filter((b: any) => b?.type === "thinking" || b?.type === "redacted_thinking")
+      .map((b: any) => b?.thinking ?? "")
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
+/** Extracts and normalizes token usage from a chat event payload. */
+function extractUsage(payload: Record<string, any>): TokenUsage | undefined {
+  const raw = payload?.usage;
+  if (!raw || typeof raw !== "object") return undefined;
+
+  const u = raw as Record<string, any>;
+  const usage: TokenUsage = {};
+
+  // Normalize: accept both camelCase and snake_case variants
+  const input = finiteOrUndef(u.input ?? u.inputTokens ?? u.input_tokens);
+  const output = finiteOrUndef(u.output ?? u.outputTokens ?? u.output_tokens);
+  if (input !== undefined) usage.input = input;
+  if (output !== undefined) usage.output = output;
+
+  const total = finiteOrUndef(u.totalTokens ?? u.total_tokens);
+  if (total !== undefined) usage.totalTokens = total;
+  else if (input !== undefined && output !== undefined) usage.totalTokens = input + output;
+
+  const cacheRead = finiteOrUndef(u.cacheRead ?? u.cache_read_input_tokens);
+  const cacheWrite = finiteOrUndef(u.cacheWrite ?? u.cache_creation_input_tokens);
+  if (cacheRead !== undefined) usage.cacheRead = cacheRead;
+  if (cacheWrite !== undefined) usage.cacheWrite = cacheWrite;
+
+  if (u.cost && typeof u.cost === "object") usage.cost = u.cost;
+
+  // Return undefined if nothing was populated
+  return Object.keys(usage).length > 0 ? usage : undefined;
+}
+
+function finiteOrUndef(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
 /** Generates a new unique session key. */
 function createSessionKey(prefix = "agent:main"): string {
   return `${prefix}:${crypto.randomUUID()}`;
+}
+
+// ── Title Derivation ────────────────────────────────────────────────────────
+
+const DERIVED_TITLE_MAX_LEN = 60;
+
+/** Truncate a title string, preferring word boundaries. */
+function truncateTitle(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  const cut = text.slice(0, maxLen - 1);
+  const lastSpace = cut.lastIndexOf(" ");
+  if (lastSpace > maxLen * 0.6) {
+    return cut.slice(0, lastSpace) + "…";
+  }
+  return cut + "…";
+}
+
+/** Format a session key prefix with optional date for fallback titles. */
+function formatSessionKeyPrefix(key: string, updatedAt?: number | null): string {
+  const prefix = key.slice(0, 8);
+  if (updatedAt && updatedAt > 0) {
+    const date = new Date(updatedAt).toISOString().slice(0, 10);
+    return `${prefix} (${date})`;
+  }
+  return prefix;
+}
+
+/**
+ * Derive a human-readable session title, mirroring the openclaw gateway logic.
+ *
+ * Priority cascade:
+ *  1. `displayName` — explicit user-set name
+ *  2. `label` — only if it looks like a real label (not raw JSON/metadata)
+ *  3. `firstUserMessage` — first user message text, truncated to 60 chars
+ *  4. Session key prefix + date fallback
+ */
+function deriveSessionTitle(
+  session: Session,
+  firstUserMessage?: string | null,
+): string {
+  const displayName = session.displayName?.trim();
+  if (displayName) return displayName;
+
+  // Only use label if it doesn't look like raw untrusted metadata / JSON blob
+  const label = session.label?.trim();
+  if (label && !label.startsWith("{") && !label.startsWith("Sender")) {
+    return truncateTitle(label, DERIVED_TITLE_MAX_LEN);
+  }
+
+  if (firstUserMessage?.trim()) {
+    const normalized = firstUserMessage.replace(/\s+/g, " ").trim();
+    return truncateTitle(normalized, DERIVED_TITLE_MAX_LEN);
+  }
+
+  return formatSessionKeyPrefix(session.key, session.updatedAt);
 }
 
 // ── Pending Request Tracking ───────────────────────────────────────────────
@@ -358,13 +468,26 @@ class CoreClient {
       const text = extractText(p?.message);
 
       if (state === "delta" || state === "final" || state === "error" || state === "aborted") {
-        this._emitChat({
+        const thinking = extractThinking(p?.message);
+        const usage = extractUsage(p);
+        const model: string | undefined =
+          typeof p?.model === "string" ? p.model
+          : typeof p?.modelId === "string" ? p.modelId
+          : typeof p?.message?.model === "string" ? p.message.model
+          : undefined;
+
+        const event: ChatEvent = {
           type: (state === "delta" ? "stream" : state) as ChatEvent["type"],
           runId,
           sessionKey,
           text: state === "error" ? (p?.errorMessage ?? text ?? "Unknown error") : text,
           raw: p,
-        });
+        };
+        if (thinking) event.thinking = thinking;
+        if (usage) event.usage = usage;
+        if (model) event.model = model;
+
+        this._emitChat(event);
       }
       return;
     }
@@ -477,9 +600,11 @@ class CoreClient {
 
 export class ControlUIClaw {
   private _core: CoreClient;
+  private _defaultThinking: ThinkingLevel;
 
-  private constructor(core: CoreClient) {
+  private constructor(core: CoreClient, thinking: ThinkingLevel) {
     this._core = core;
+    this._defaultThinking = thinking;
   }
 
   /**
@@ -487,10 +612,17 @@ export class ControlUIClaw {
    *
    * ```ts
    * const claw = ControlUIClaw.init({ url: "wss://gateway:18789", token: "xxx" });
+   *
+   * // With thinking enabled by default
+   * const claw = ControlUIClaw.init({
+   *   url: "wss://gateway:18789",
+   *   token: "xxx",
+   *   thinking: "medium",
+   * });
    * ```
    */
   static init(options: InitOptions): ControlUIClaw {
-    return new ControlUIClaw(new CoreClient(options));
+    return new ControlUIClaw(new CoreClient(options), options.thinking ?? "off");
   }
 
   /** Current connection state. */
@@ -541,6 +673,34 @@ export class ControlUIClaw {
     );
     const sessions = result?.sessions ?? [];
     sessions.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+
+    // Client-side title derivation for sessions missing a usable derivedTitle
+    await Promise.all(
+      sessions.map(async (s) => {
+        if (!s.derivedTitle?.trim()?.includes("(untrusted metadata):")) return;
+
+        // Try to get the first user message from chat history
+        let firstUserMessage: string | null = null;
+        try {
+          const history = await this._core.request<ChatHistoryResult>(
+            "chat.history",
+            { sessionKey: s.key, limit: 5 },
+          );
+          const messages = history?.messages ?? [];
+          const firstUser = messages.find(
+            (m: Record<string, unknown>) =>
+              m.role === "user" || m.role === "human",
+          );
+          if (firstUser) {
+            firstUserMessage = extractText(firstUser);
+          }
+        } catch {
+          // chat.history may not be available for all sessions — fall through
+        }
+        s.derivedTitle = deriveSessionTitle(s, firstUserMessage);
+      }),
+    );
+
     return sessions;
   }
 
@@ -563,15 +723,28 @@ export class ControlUIClaw {
    * Send a prompt to the given session.
    *
    * ```ts
+   * // Basic
    * await claw.sendPrompt(sessionKey, "What is the weather?");
+   *
+   * // With thinking enabled
+   * await claw.sendPrompt(sessionKey, "Solve this step by step", { thinking: "high" });
    * ```
    */
-  async sendPrompt(sessionKey: string, message: string): Promise<void> {
-    await this._core.request("chat.send", {
+  async sendPrompt(
+    sessionKey: string,
+    message: string,
+    options?: SendPromptOptions,
+  ): Promise<void> {
+    const thinking = options?.thinking ?? this._defaultThinking;
+    const params: Record<string, unknown> = {
       sessionKey,
       message,
       idempotencyKey: crypto.randomUUID(),
-    });
+    };
+    if (thinking && thinking !== "off") {
+      params.thinking = thinking;
+    }
+    await this._core.request("chat.send", params);
   }
 
   // ── Streams ────────────────────────────────────────────────────────────
@@ -639,5 +812,21 @@ export class ControlUIClaw {
   /** Extract readable text from any chat message shape. */
   static extractText(msg: unknown): string {
     return extractText(msg);
+  }
+
+  /**
+   * Derive a human-readable title for a session.
+   *
+   * Uses the same cascading priority as the openclaw gateway:
+   *  1. `displayName`
+   *  2. `label` (if it looks like a real label, not raw metadata)
+   *  3. `firstUserMessage` (truncated to 60 chars)
+   *  4. Session key prefix + date
+   */
+  static deriveSessionTitle(
+    session: Session,
+    firstUserMessage?: string | null,
+  ): string {
+    return deriveSessionTitle(session, firstUserMessage);
   }
 }
