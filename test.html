@@ -265,9 +265,9 @@
 
   <div class="connect-section">
     <label>Gateway URL</label>
-    <input id="url" value="wss://localhost:18789" spellcheck="false" />
+    <input id="url" value="ws://localhost:18789" spellcheck="false" />
     <label>Token</label>
-    <input id="token" type="password" placeholder="Optional" />
+    <input id="token" type="password" placeholder="Optional" value="a280db54b70df35684f66c3f7d21b6ee9747875aa8160b7c" />
     <div class="connect-row">
       <button class="btn btn-connect" id="btnConnect">Connect</button>
       <button class="btn btn-disconnect" id="btnDisconnect">&#x2715;</button>
@@ -344,7 +344,6 @@
   const btnSend = $("btnSend");
   const msgInput = $("msgInput");
   const messagesEl = $("messages");
-  const emptyState = $("emptyState");
   const sessionList = $("sessionList");
   const chatTitle = $("chatTitle");
   const chatSessionKey = $("chatSessionKey");
@@ -362,6 +361,10 @@
   let sdkAvailable = false;
 
   // ── Helpers ───────────────────────────────────────────────
+  function hideEmptyState() {
+    var es = $("emptyState");
+    if (es) es.style.display = "none";
+  }
   function escapeHtml(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
@@ -389,10 +392,11 @@
 
   // ── Status ────────────────────────────────────────────────
   function setStatus(state) {
-    dot.className = "status-dot " + (state || "off");
-    const labels = { on: "Connected", connecting: "Connecting...", off: "Disconnected", "": "Disconnected" };
+    var visual = state || "off";
+    dot.className = "status-dot " + visual;
+    var labels = { on: "Connected", connecting: "Connecting...", off: "Disconnected", "": "Disconnected" };
     statusLabel.textContent = labels[state] || "Disconnected";
-    const connected = state === "on";
+    var connected = state === "on";
     btnSend.disabled = !connected;
     msgInput.disabled = !connected;
     if (connected) msgInput.focus();
@@ -444,7 +448,7 @@
 
   function addMessage(role, text, opts) {
     opts = opts || {};
-    emptyState.style.display = "none";
+    hideEmptyState();
     var msg = document.createElement("div");
     msg.className = "msg " + role;
     if (opts.id) msg.id = opts.id;
@@ -468,7 +472,7 @@
   function updateStreamingMessage(runId, text, thinking) {
     var el = document.getElementById("stream-" + runId);
     if (!el) {
-      emptyState.style.display = "none";
+      hideEmptyState();
       el = document.createElement("div");
       el.className = "msg assistant";
       el.id = "stream-" + runId;
@@ -533,13 +537,32 @@
     loadHistory(s.key);
   }
 
+  /** Normalize gateway chat.history payloads (messages, items, or nested shapes). */
+  function historyMessagesFromResult(history) {
+    if (!history) return [];
+    if (Array.isArray(history)) return history;
+    var h = history;
+    var candidates = [h.messages, h.items, h.entries, h.turns, h.log];
+    for (var i = 0; i < candidates.length; i++) {
+      if (Array.isArray(candidates[i])) return candidates[i];
+    }
+    if (h.data && typeof h.data === "object") {
+      var d = h.data;
+      var nested = [d.messages, d.items, d.entries, d.turns];
+      for (var j = 0; j < nested.length; j++) {
+        if (Array.isArray(nested[j])) return nested[j];
+      }
+    }
+    return [];
+  }
+
   async function loadHistory(sessionKey) {
+    // Clear transcript only — do not touch a global `emptyState` after this; that node is removed here.
     messagesEl.innerHTML = "";
-    emptyState.style.display = "none";
 
     try {
       var history = await claw.chatHistory(sessionKey, { limit: 50 });
-      var msgs = (history && history.messages) || (history && history.items) || [];
+      var msgs = historyMessagesFromResult(history);
       if (msgs.length === 0) {
         messagesEl.innerHTML = '<div class="empty-state" style="display:flex"><div class="icon">&#9672;</div><p>No messages yet</p></div>';
         return;
@@ -548,7 +571,7 @@
         var m = msgs[i];
         var role = m.role === "user" || m.role === "human" ? "user" : m.role === "assistant" ? "assistant" : "system";
         var text = ControlUIClaw.extractText(m);
-        addMessage(role, text);
+        addMessage(role, text, { thinking: m.thinking, usage: m.usage, model: m.model, raw: m.raw });
       }
     } catch (err) {
       addMessage("system", "Failed to load history: " + err.message);
@@ -565,77 +588,13 @@
     }
   }
 
-  // ── Demo mode — sample data shown on page load ────────────
-  function loadDemoData() {
-    var demoSessions = [
-      { title: "Explain quantum entanglement", status: "running", date: "4/13/2026", active: true },
-      { title: "Debug SDK connection handshake", status: "idle", date: "4/12/2026" },
-      { title: "Fix Chrome extension relay support", status: "idle", date: "4/11/2026" },
-      { title: "ControlUIClaw-SDK - Distribute", status: "idle", date: "4/10/2026" },
-      { title: "Create sample npm project", status: "idle", date: "4/9/2026" },
-      { title: "Read WebSocket from OpenClaw", status: "idle", date: "4/8/2026" },
-    ];
-
-    sessionList.innerHTML = "";
-    for (var i = 0; i < demoSessions.length; i++) {
-      var s = demoSessions[i];
-      var item = document.createElement("div");
-      item.className = "session-item" + (s.active ? " active" : "");
-      var cls = s.status === "running" ? "running" : "idle";
-      item.innerHTML = '<div class="title">' + escapeHtml(s.title) + '</div>' +
-        '<div class="meta"><span class="status-badge ' + cls + '">' + s.status + '</span><span>' + s.date + '</span></div>';
-      sessionList.appendChild(item);
-    }
-
-    // Show connected status in demo mode
-    dot.className = "status-dot on";
-    statusLabel.textContent = "Connected";
-
-    chatTitle.textContent = "Explain quantum entanglement";
-    chatSessionKey.textContent = "agent:main:a1b2c3d4-e5f6-7890-abcd-ef1234567890";
-    emptyState.style.display = "none";
-
-    addMessage("user", "Explain quantum entanglement in simple terms", { time: "19:01" });
-
-    addMessage("assistant", "HEARTBEAT_OK", {
-      time: "19:02",
-      usage: { input: 30592, output: 9, totalTokens: 30601 },
-      model: "gpt-5.4",
-    });
-
-    addMessage("user", "Can you explain it more deeply? Use step by step reasoning.", { time: "19:02" });
-
-    addMessage("assistant",
-      "Quantum entanglement is a phenomenon where two or more particles become interconnected in such a way that the quantum state of each particle cannot be described independently of the others, regardless of the distance separating them.\n\nWhen you measure one particle\u2019s property (like spin), you instantly know the corresponding property of its entangled partner. Einstein famously called this \u201Cspooky action at a distance.\u201D\n\nKey points:\n- Entangled particles share a quantum state\n- Measurement of one instantly affects the other\n- This holds regardless of distance between particles\n- It does not allow faster-than-light communication\n- It is the basis for quantum computing and quantum cryptography",
-      {
-        time: "19:02",
-        thinking: "The user wants a deeper explanation with step-by-step reasoning. Let me break down quantum entanglement from first principles.\n\nI should cover: what entanglement is at the quantum level, how it arises (e.g. parametric down-conversion), the EPR paradox, Bell\u2019s theorem proving it\u2019s not hidden variables, and practical applications.\n\nI\u2019ll keep it accessible but go deeper than the surface-level explanation.",
-        usage: { input: 30624, output: 847, totalTokens: 31471, cacheRead: 28800 },
-        model: "gpt-5.4",
-      }
-    );
-
-    // Demo event log entries
-    logInner.innerHTML =
-      '<span class="ev-connect">[19:01:42] [connected] Connected \u2014 protocol v3, server 2026.4.1</span>\n' +
-      '<span class="ev-info">[19:02:05] [final] run=a8f3bc21 tokens={"input":30592,"output":9,"totalTokens":30601}</span>\n' +
-      '<span class="ev-info">[19:02:14] [final] run=c4e1d702 tokens={"input":30624,"output":847,"totalTokens":31471,"cacheRead":28800}</span>\n';
-
-    // Show event log open by default in demo mode
-    logToggle.classList.add("open");
-    eventLog.classList.add("open");
-  }
-
-  function clearDemoData() {
+  function resetChatSurface() {
     messagesEl.innerHTML = '<div class="empty-state" id="emptyState" style="display:flex"><div class="icon">&#9672;</div><p>Connect to a gateway and start chatting</p></div>';
     sessionList.innerHTML = "";
     logInner.innerHTML = "";
     chatTitle.textContent = "New Conversation";
     chatSessionKey.textContent = "No session selected";
   }
-
-  // ── Load demo data immediately ────────────────────────────
-  loadDemoData();
 
   // ── Auto-resize textarea ──────────────────────────────────
   function autoResizeTextarea() {
@@ -652,7 +611,7 @@
       sdkAvailable = true;
       logEvent("info", "SDK loaded successfully");
     } catch (err) {
-      logEvent("error", "SDK not available: " + err.message + " — running in demo mode");
+      logEvent("error", "SDK not available: " + err.message);
     }
   }
 
@@ -673,7 +632,7 @@
     var url = $("url").value.trim();
     var token = $("token").value.trim() || undefined;
 
-    clearDemoData();
+    resetChatSurface();
     claw = ControlUIClaw.init({ url: url, token: token, thinking: thinkingLevel.value });
     setStatus("connecting");
 

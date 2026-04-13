@@ -487,7 +487,18 @@ class CoreClient {
         if (usage) event.usage = usage;
         if (model) event.model = model;
 
-        this._emitChat(event);
+        // On "final" events, the gateway may not include usage/model directly.
+        // Backfill from chat.history which carries per-message usage on assistant msgs.
+        if (state === "final" && (!usage || !model) && sessionKey) {
+          this._backfillUsageFromHistory(event, sessionKey).then((enriched) => {
+            this._emitChat(enriched);
+          }).catch(() => {
+            // History fetch failed — emit with whatever we have
+            this._emitChat(event);
+          });
+        } else {
+          this._emitChat(event);
+        }
       }
       return;
     }
@@ -515,6 +526,45 @@ class CoreClient {
         message: `[${frame.event}] ${JSON.stringify(frame.payload ?? {})}`,
       });
     }
+  }
+
+  // ── Internal: backfill usage from chat.history ─────────────────────────
+
+  private async _backfillUsageFromHistory(
+    event: ChatEvent,
+    sessionKey: string,
+  ): Promise<ChatEvent> {
+    const history = await this.request<ChatHistoryResult>("chat.history", {
+      sessionKey,
+      limit: 5,
+    });
+    const messages = history?.messages ?? history?.items ?? [];
+    // Find the last assistant message — it carries per-message usage
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((m: Record<string, any>) => m.role === "assistant");
+
+    if (!lastAssistant) return event;
+
+    const msg = lastAssistant as Record<string, any>;
+
+    // Backfill usage if not already present
+    if (!event.usage) {
+      const usage = extractUsage(msg);
+      if (usage) event.usage = usage;
+    }
+
+    // Backfill model if not already present
+    if (!event.model) {
+      const model =
+        typeof msg.model === "string" ? msg.model
+        : typeof msg.modelId === "string" ? msg.modelId
+        : typeof msg.provider === "string" ? msg.provider
+        : undefined;
+      if (model) event.model = model;
+    }
+
+    return event;
   }
 
   // ── Internal: handshake ────────────────────────────────────────────────
@@ -708,15 +758,35 @@ export class ControlUIClaw {
 
   /**
    * Load chat history for a session.
+   * Assistant messages are enriched with normalized `usage` and `model` fields.
    */
   async chatHistory(
     sessionKey: string,
     options?: { limit?: number },
   ): Promise<ChatHistoryResult> {
-    return this._core.request<ChatHistoryResult>("chat.history", {
+    const result = await this._core.request<ChatHistoryResult>("chat.history", {
       sessionKey,
       limit: options?.limit ?? 50,
     });
+    const messages = result?.messages ?? result?.items ?? [];
+    for (const msg of messages) {
+      if (msg.role !== "assistant") continue;
+      const raw = msg as Record<string, any>;
+      // Normalize usage onto typed field
+      if (!msg.usage) {
+        const usage = extractUsage(raw);
+        if (usage) msg.usage = usage;
+      }
+      // Normalize model onto typed field
+      if (!msg.model) {
+        const model =
+          typeof raw.model === "string" ? raw.model
+          : typeof raw.modelId === "string" ? raw.modelId
+          : undefined;
+        if (model) msg.model = model;
+      }
+    }
+    return result;
   }
 
   /**

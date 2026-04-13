@@ -144,6 +144,10 @@ export interface ChatMessage {
   text?: string;
   content?: string | ContentBlock[];
   choices?: ChatChoice[];
+  /** Normalized token usage (present on assistant messages). */
+  usage?: TokenUsage;
+  /** Model identifier (e.g. "sonnet-4.6") when reported by the gateway. */
+  model?: string;
   [key: string]: unknown;
 }
 
