@@ -567,6 +567,7 @@
         messagesEl.innerHTML = '<div class="empty-state" style="display:flex"><div class="icon">&#9672;</div><p>No messages yet</p></div>';
         return;
       }
+      console.log(msgs);
       for (var i = 0; i < msgs.length; i++) {
         var m = msgs[i];
         var role = m.role === "user" || m.role === "human" ? "user" : m.role === "assistant" ? "assistant" : "system";

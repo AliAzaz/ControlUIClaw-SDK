@@ -20,8 +20,10 @@ import type {
   SessionsListResult,
   ChatHistoryResult,
   SendPromptOptions,
+  SendImagePromptOptions,
   TokenUsage,
   ThinkingLevel,
+  Attachment,
 } from "./types.js";
 
 import {
@@ -104,6 +106,79 @@ function extractUsage(payload: Record<string, any>): TokenUsage | undefined {
 
 function finiteOrUndef(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+/**
+ * Extracts attachment metadata from a chat message.
+ *
+ * Sources:
+ * - Content blocks with `type: "image"` (gateway strips `data`, adds `omitted`/`bytes`)
+ * - User message `MediaPaths` / `MediaTypes` fields (filesystem paths on gateway host)
+ */
+function extractAttachments(msg: Record<string, any>): Attachment[] | undefined {
+  const attachments: Attachment[] = [];
+
+  // Image content blocks (present on both user and assistant messages)
+  // Formats:
+  //   - Anthropic: { type: "image", source: { type: "base64", data: "...", media_type: "image/png" } }
+  //   - Simplified: { type: "image", data: "base64...", mimeType: "image/png" }
+  //   - Omitted:   { type: "image", omitted: true, bytes: 12345, mimeType: "image/png" }
+  //   - OpenAI:    { type: "image_url", image_url: { url: "..." } }
+  if (Array.isArray(msg.content)) {
+    for (const block of msg.content) {
+      if (block?.type === "image") {
+        const source = block.source as Record<string, unknown> | undefined;
+        const mimeType =
+          typeof block.mimeType === "string" ? block.mimeType
+          : typeof source?.media_type === "string" ? source.media_type
+          : "application/octet-stream";
+        const bytes = typeof block.bytes === "number" ? block.bytes : 0;
+
+        let dataUrl = "";
+        if (source?.type === "base64" && typeof source.data === "string") {
+          // Anthropic format — source.data survives sanitization
+          const d = source.data as string;
+          dataUrl = d.startsWith("data:") ? d : `data:${mimeType};base64,${d}`;
+        } else if (typeof block.data === "string") {
+          // Simplified format — top-level data (may be stripped by gateway)
+          dataUrl = block.data.startsWith("data:")
+            ? block.data
+            : `data:${mimeType};base64,${block.data}`;
+        } else if (typeof block.url === "string") {
+          dataUrl = block.url;
+        }
+        attachments.push({ mimeType, bytes, dataUrl });
+      } else if (block?.type === "image_url") {
+        // OpenAI format
+        const imageUrl = block.image_url as Record<string, unknown> | undefined;
+        if (typeof imageUrl?.url === "string") {
+          attachments.push({
+            mimeType: "image/png",
+            bytes: 0,
+            dataUrl: imageUrl.url,
+          });
+        }
+      }
+    }
+  }
+
+  // User-message media fields (MediaPaths + MediaTypes arrays)
+  const paths: string[] = Array.isArray(msg.MediaPaths) ? msg.MediaPaths : [];
+  const types: string[] = Array.isArray(msg.MediaTypes) ? msg.MediaTypes : [];
+  for (let i = 0; i < paths.length; i++) {
+    const path = paths[i];
+    if (typeof path !== "string") continue;
+    const mimeType = typeof types[i] === "string" ? types[i] : "application/octet-stream";
+    // Try to enrich an existing content-block entry that has no dataUrl yet
+    const existing = attachments.find((a) => a.mimeType === mimeType && !a.dataUrl);
+    if (existing) {
+      existing.dataUrl = path;
+    } else {
+      attachments.push({ mimeType, bytes: 0, dataUrl: path });
+    }
+  }
+
+  return attachments.length > 0 ? attachments : undefined;
 }
 
 /** Generates a new unique session key. */
@@ -770,14 +845,20 @@ export class ControlUIClaw {
     });
     const messages = result?.messages ?? result?.items ?? [];
     for (const msg of messages) {
-      if (msg.role !== "assistant") continue;
       const raw = msg as Record<string, any>;
-      // Normalize usage onto typed field
+      // Extract attachments from any message (user or assistant)
+      if (!msg.attachments) {
+        console.log(msg.attachments);
+        const attachments = extractAttachments(raw);
+        if (attachments) msg.attachments = attachments;
+      }
+
+      // Usage and model are only on assistant messages
+      if (msg.role !== "assistant") continue;
       if (!msg.usage) {
         const usage = extractUsage(raw);
         if (usage) msg.usage = usage;
       }
-      // Normalize model onto typed field
       if (!msg.model) {
         const model =
           typeof raw.model === "string" ? raw.model
@@ -809,6 +890,49 @@ export class ControlUIClaw {
     const params: Record<string, unknown> = {
       sessionKey,
       message,
+      idempotencyKey: crypto.randomUUID(),
+    };
+    if (thinking && thinking !== "off") {
+      params.thinking = thinking;
+    }
+    await this._core.request("chat.send", params);
+  }
+
+  /**
+   * Send a message with image attachments to the given session.
+   *
+   * ```ts
+   * // Single image
+   * await claw.sendImagePrompt(sessionKey, "What's in this image?", {
+   *   images: [{ mimeType: "image/png", data: base64String }],
+   * });
+   *
+   * // Multiple images with thinking enabled
+   * await claw.sendImagePrompt(sessionKey, "Compare these two images", {
+   *   images: [
+   *     { mimeType: "image/jpeg", fileName: "photo1.jpg", data: base64A },
+   *     { mimeType: "image/jpeg", fileName: "photo2.jpg", data: base64B },
+   *   ],
+   *   thinking: "high",
+   * });
+   * ```
+   */
+  async sendImagePrompt(
+    sessionKey: string,
+    message: string,
+    options: SendImagePromptOptions,
+  ): Promise<void> {
+    const thinking = options.thinking ?? this._defaultThinking;
+    const attachments = options.images.map((img) => ({
+      type: "image",
+      mimeType: img.mimeType,
+      ...(img.fileName ? { fileName: img.fileName } : {}),
+      content: img.data,
+    }));
+    const params: Record<string, unknown> = {
+      sessionKey,
+      message,
+      attachments,
       idempotencyKey: crypto.randomUUID(),
     };
     if (thinking && thinking !== "off") {

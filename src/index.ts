@@ -31,6 +31,8 @@ export type {
   DeviceIdentity,
   HelloPayload,
   SendPromptOptions,
+  SendImagePromptOptions,
+  ImageAttachment,
   TokenUsage,
   ThinkingLevel,
 } from "./types.js";

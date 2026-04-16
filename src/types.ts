@@ -137,6 +137,18 @@ export interface TokenUsage {
   cost?: Record<string, unknown>;
 }
 
+// ── Attachments ───────────────────────────────────────────────────────────
+
+/** Image/file attachment metadata extracted from chat history messages. */
+export interface Attachment {
+  /** MIME type (e.g. "image/jpeg", "image/png"). */
+  mimeType: string;
+  /** Size in bytes (when the gateway omits inline data). */
+  bytes: number;
+  /** Filesystem path on the gateway host (user messages only). */
+  dataUrl: string;
+}
+
 // ── Chat Types ─────────────────────────────────────────────────────────────
 
 export interface ChatMessage {
@@ -148,6 +160,8 @@ export interface ChatMessage {
   usage?: TokenUsage;
   /** Model identifier (e.g. "sonnet-4.6") when reported by the gateway. */
   model?: string;
+  /** Image/file attachments associated with this message. */
+  attachments?: Attachment[];
   [key: string]: unknown;
 }
 
@@ -220,6 +234,25 @@ export interface SendPromptOptions {
    * Overrides the default set in `InitOptions.thinking`.
    */
   thinking?: ThinkingLevel;
+}
+
+/** A single image attachment for `sendImagePrompt()`. */
+export interface ImageAttachment {
+  /** MIME type (e.g. "image/png", "image/jpeg"). */
+  mimeType: string;
+  /** Optional file name for the attachment. */
+  fileName?: string;
+  /** Base64-encoded image data. */
+  data: string;
+}
+
+/** Options for `sendImagePrompt()`. */
+export interface SendImagePromptOptions extends SendPromptOptions {
+  /**
+   * One or more image attachments to include with the message.
+   * Each attachment should contain base64-encoded image data.
+   */
+  images: ImageAttachment[];
 }
 
 /** Returned by `connect()` — either success or an error. */
