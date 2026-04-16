@@ -14,6 +14,9 @@ export {
   base64UrlDecode,
 } from "./crypto.js";
 
+// Enums
+export { Channel } from "./types.js";
+
 // Types
 export type {
   InitOptions,
@@ -35,4 +38,22 @@ export type {
   ImageAttachment,
   TokenUsage,
   ThinkingLevel,
+  ChannelsStatusResult,
+  ChannelsChannelData,
+  ChannelAccountSnapshot,
+  ChannelUiMeta,
+  WhatsAppChannelStatus,
+  TelegramChannelStatus,
+  DiscordChannelStatus,
+  SlackChannelStatus,
+  SignalChannelStatus,
+  IMessageChannelStatus,
+  GoogleChatChannelStatus,
+  NostrChannelStatus,
+  ChannelLogoutResult,
+  ChannelLogoutOptions,
+  WhatsAppLoginOptions,
+  WhatsAppLoginStatusEvent,
+  WhatsAppLoginStep,
+  ChannelStatusEvent,
 } from "./types.js";

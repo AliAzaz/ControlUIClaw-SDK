@@ -300,3 +300,245 @@ export interface ChatEvent {
 
 /** A function that unsubscribes the listener when called. */
 export type Unsubscribe = () => void;
+
+// ── Channel Types ─────────────────────────────────────────────────────────
+
+/** Generic per-account status snapshot returned by `channels.status`. */
+export interface ChannelAccountSnapshot {
+  accountId: string;
+  name?: string | null;
+  enabled?: boolean | null;
+  configured?: boolean | null;
+  linked?: boolean | null;
+  running?: boolean | null;
+  connected?: boolean | null;
+  reconnectAttempts?: number | null;
+  lastConnectedAt?: number | null;
+  lastError?: string | null;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastInboundAt?: number | null;
+  lastOutboundAt?: number | null;
+  lastProbeAt?: number | null;
+  mode?: string | null;
+  dmPolicy?: string | null;
+  allowFrom?: string[] | null;
+  tokenSource?: string | null;
+  botTokenSource?: string | null;
+  appTokenSource?: string | null;
+  credentialSource?: string | null;
+  baseUrl?: string | null;
+  cliPath?: string | null;
+  dbPath?: string | null;
+  port?: number | null;
+  probe?: unknown;
+  audit?: unknown;
+  application?: unknown;
+  [key: string]: unknown;
+}
+
+/** Per-channel status shapes matching the gateway health snapshot. */
+
+export interface WhatsAppChannelStatus {
+  configured: boolean;
+  linked: boolean;
+  running: boolean;
+  connected: boolean;
+  authAgeMs?: number | null;
+  reconnectAttempts: number;
+  lastConnectedAt?: number | null;
+  lastError?: string | null;
+  lastMessageAt?: number | null;
+  lastEventAt?: number | null;
+  self?: { id?: string; name?: string; [key: string]: unknown } | null;
+  lastDisconnect?: { reason?: string; [key: string]: unknown } | null;
+}
+
+export interface TelegramChannelStatus {
+  configured: boolean;
+  running: boolean;
+  tokenSource?: string | null;
+  mode?: string | null;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  probe?: { ok?: boolean; username?: string; [key: string]: unknown } | null;
+  lastProbeAt?: number | null;
+}
+
+export interface DiscordChannelStatus {
+  configured: boolean;
+  running: boolean;
+  tokenSource?: string | null;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  probe?: { ok?: boolean; username?: string; [key: string]: unknown } | null;
+  lastProbeAt?: number | null;
+}
+
+export interface SlackChannelStatus {
+  configured: boolean;
+  running: boolean;
+  botTokenSource?: string | null;
+  appTokenSource?: string | null;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  probe?: { ok?: boolean; [key: string]: unknown } | null;
+  lastProbeAt?: number | null;
+}
+
+export interface SignalChannelStatus {
+  configured: boolean;
+  running: boolean;
+  baseUrl: string;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  probe?: { ok?: boolean; [key: string]: unknown } | null;
+  lastProbeAt?: number | null;
+}
+
+export interface IMessageChannelStatus {
+  configured: boolean;
+  running: boolean;
+  cliPath?: string | null;
+  dbPath?: string | null;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  probe?: { ok?: boolean; [key: string]: unknown } | null;
+  lastProbeAt?: number | null;
+}
+
+export interface GoogleChatChannelStatus {
+  configured: boolean;
+  running: boolean;
+  credentialSource?: string | null;
+  audienceType?: string | null;
+  audience?: string | null;
+  webhookPath?: string | null;
+  webhookUrl?: string | null;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  probe?: { ok?: boolean; [key: string]: unknown } | null;
+  lastProbeAt?: number | null;
+}
+
+export interface NostrChannelStatus {
+  configured: boolean;
+  running: boolean;
+  publicKey?: string | null;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  profile?: { name?: string; about?: string; [key: string]: unknown } | null;
+}
+
+/** Per-channel status map returned inside `ChannelsStatusResult`. */
+export type ChannelsChannelData = {
+  whatsapp?: WhatsAppChannelStatus;
+  telegram?: TelegramChannelStatus;
+  discord?: DiscordChannelStatus | null;
+  googlechat?: GoogleChatChannelStatus | null;
+  slack?: SlackChannelStatus | null;
+  signal?: SignalChannelStatus | null;
+  imessage?: IMessageChannelStatus | null;
+  nostr?: NostrChannelStatus | null;
+  channelAccounts?: Record<string, ChannelAccountSnapshot[]> | null;
+};
+
+/** UI metadata for a channel entry. */
+export interface ChannelUiMeta {
+  id: string;
+  label: string;
+  detailLabel?: string;
+  systemImage?: string;
+}
+
+/** Full result returned by `getChannelsStatus()`. */
+export interface ChannelsStatusResult {
+  ts: number;
+  channelOrder: string[];
+  channelLabels: Record<string, string>;
+  channelDetailLabels?: Record<string, string>;
+  channelSystemImages?: Record<string, string>;
+  channelMeta?: ChannelUiMeta[];
+  channels: ChannelsChannelData;
+  channelAccounts: Record<string, ChannelAccountSnapshot[]>;
+  channelDefaultAccountId: Record<string, string>;
+}
+
+/** Known channel identifiers. */
+export enum Channel {
+  WhatsApp = "whatsapp",
+  Telegram = "telegram",
+  Discord = "discord",
+  Slack = "slack",
+  Signal = "signal",
+  IMessage = "imessage",
+  GoogleChat = "googlechat",
+  Nostr = "nostr",
+}
+
+/** Options for `logoutChannel()`. */
+export interface ChannelLogoutOptions {
+  accountId?: string;
+}
+
+/** Result from `logoutChannel()`. */
+export interface ChannelLogoutResult {
+  channel: string;
+  accountId: string;
+  cleared: boolean;
+  loggedOut?: boolean;
+  envToken?: boolean;
+  [key: string]: unknown;
+}
+
+// ── WhatsApp Login Types ──────────────────────────────────────────────────
+
+/** Progress steps emitted during `startWhatsAppChannelLogin()`. */
+export type WhatsAppLoginStep =
+  | "qr_ready"
+  | "scanning"
+  | "authenticating"
+  | "connected"
+  | "failed";
+
+/** Event payload delivered to the `onStatus` callback. */
+export interface WhatsAppLoginStatusEvent {
+  step: WhatsAppLoginStep;
+  /** QR code data URL (present when `step` is `"qr_ready"`). */
+  qrDataUrl?: string;
+  /** Human-readable status message. */
+  message?: string;
+  /** Error detail (present when `step` is `"failed"`). */
+  error?: string;
+}
+
+/** Options for `startWhatsAppChannelLogin()`. */
+export interface WhatsAppLoginOptions {
+  /** Force re-login even if already authenticated. */
+  force?: boolean;
+  /** Overall timeout in ms for the full login flow. */
+  timeoutMs?: number;
+  /** Target account id. */
+  accountId?: string;
+  /** Called with progress updates throughout the login flow. */
+  onStatus: (event: WhatsAppLoginStatusEvent) => void;
+}
+
+// ── Channel Status Listener ───────────────────────────────────────────────
+
+/** Channel status change event emitted by `onChannelStatus()`. */
+export interface ChannelStatusEvent {
+  /** Timestamp of the health snapshot. */
+  ts: number;
+  /** Per-channel status data. */
+  channels: ChannelsChannelData;
+  /** Per-channel per-account snapshots. */
+  channelAccounts: Record<string, ChannelAccountSnapshot[]>;
+}

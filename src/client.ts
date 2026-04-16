@@ -2,28 +2,36 @@
 // ControlUIClaw SDK — Gateway Client
 // ---------------------------------------------------------------------------
 
-import type {
-  InitOptions,
-  ConnectResult,
-  HealthEvent,
-  ChatEvent,
-  Unsubscribe,
-  ConnectionState,
-  HelloPayload,
-  ConnectParams,
-  ClientInfo,
-  DeviceIdentity,
-  EventFrame,
-  ResponseFrame,
-  RequestFrame,
-  Session,
-  SessionsListResult,
-  ChatHistoryResult,
-  SendPromptOptions,
-  SendImagePromptOptions,
-  TokenUsage,
-  ThinkingLevel,
-  Attachment,
+import {
+  Channel,
+  type InitOptions,
+  type ConnectResult,
+  type HealthEvent,
+  type ChatEvent,
+  type Unsubscribe,
+  type ConnectionState,
+  type HelloPayload,
+  type ConnectParams,
+  type ClientInfo,
+  type DeviceIdentity,
+  type EventFrame,
+  type ResponseFrame,
+  type RequestFrame,
+  type Session,
+  type SessionsListResult,
+  type ChatHistoryResult,
+  type SendPromptOptions,
+  type SendImagePromptOptions,
+  type TokenUsage,
+  type ThinkingLevel,
+  type Attachment,
+  type ChannelsStatusResult,
+  type ChannelLogoutResult,
+  type ChannelLogoutOptions,
+  type WhatsAppLoginOptions,
+  type ChannelStatusEvent,
+  type ChannelsChannelData,
+  type ChannelAccountSnapshot,
 } from "./types.js";
 
 import {
@@ -984,6 +992,212 @@ export class ControlUIClaw {
    */
   chatEvents(callback: (event: ChatEvent) => void): Unsubscribe {
     return this._core.onChat(callback);
+  }
+
+  // ── Channels ───────────────────────────────────────────────────────────
+
+  /**
+   * Get the status of all configured channels and their accounts.
+   *
+   * ```ts
+   * const status = await claw.getChannelsStatus();
+   * console.log(status.channelOrder); // ["whatsapp", "telegram", ...]
+   * console.log(status.channels.whatsapp?.connected);
+   *
+   * // With health probes
+   * const probed = await claw.getChannelsStatus(true, 10000);
+   * ```
+   */
+  async getChannelsStatus(
+    probe?: boolean,
+    timeoutMs?: number,
+  ): Promise<ChannelsStatusResult> {
+    const params: Record<string, unknown> = {};
+    if (probe !== undefined) params.probe = probe;
+    if (timeoutMs !== undefined) params.timeoutMs = timeoutMs;
+    return this._core.request<ChannelsStatusResult>("channels.status", params);
+  }
+
+  /**
+   * Start WhatsApp QR code login and wait for completion.
+   *
+   * Handles the full login flow: initiates QR pairing, reports progress
+   * via the `onStatus` callback, and resolves when connected or rejects
+   * on failure/timeout.
+   *
+   * ```ts
+   * await claw.startWhatsAppChannelLogin({
+   *   onStatus: (event) => {
+   *     switch (event.step) {
+   *       case "qr_ready":       renderQr(event.qrDataUrl); break;
+   *       case "scanning":       showSpinner("Waiting for scan..."); break;
+   *       case "authenticating": showSpinner("Authenticating..."); break;
+   *       case "connected":      showSuccess(); break;
+   *       case "failed":         showError(event.error); break;
+   *     }
+   *   },
+   *   timeoutMs: 120000,
+   * });
+   * ```
+   */
+  async startWhatsAppChannelLogin(options: WhatsAppLoginOptions): Promise<void> {
+    const { onStatus, force, timeoutMs, accountId } = options;
+
+    // Step 1: Initiate QR pairing
+    const startParams: Record<string, unknown> = {};
+    if (force !== undefined) startParams.force = force;
+    if (timeoutMs !== undefined) startParams.timeoutMs = timeoutMs;
+    if (accountId !== undefined) startParams.accountId = accountId;
+
+    let startResult: Record<string, unknown>;
+    try {
+      startResult = await this._core.request<Record<string, unknown>>(
+        "web.login.start",
+        startParams,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onStatus({ step: "failed", error: message, message: "Failed to start QR login" });
+      throw err;
+    }
+
+    // Emit QR data
+    const qrDataUrl =
+      typeof startResult.qrDataUrl === "string"
+        ? startResult.qrDataUrl
+        : typeof startResult.qr === "string"
+          ? startResult.qr
+          : undefined;
+    onStatus({ step: "qr_ready", qrDataUrl, message: "QR code ready — scan with your phone" });
+
+    // Step 2: Wait for scan
+    onStatus({ step: "scanning", message: "Waiting for QR code scan..." });
+
+    const waitParams: Record<string, unknown> = {};
+    if (timeoutMs !== undefined) waitParams.timeoutMs = timeoutMs;
+    if (accountId !== undefined) waitParams.accountId = accountId;
+
+    let waitResult: Record<string, unknown>;
+    try {
+      onStatus({ step: "authenticating", message: "Authenticating..." });
+      waitResult = await this._core.request<Record<string, unknown>>(
+        "web.login.wait",
+        waitParams,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onStatus({ step: "failed", error: message, message: "Login failed" });
+      throw err;
+    }
+
+    if (waitResult.connected) {
+      onStatus({ step: "connected", message: "WhatsApp connected" });
+    } else {
+      const error = typeof waitResult.error === "string" ? waitResult.error : "Login did not complete";
+      onStatus({ step: "failed", error, message: "WhatsApp login failed" });
+      throw new Error(error);
+    }
+  }
+
+  /**
+   * Set a Telegram bot token to connect the Telegram channel.
+   *
+   * ```ts
+   * await claw.setTelegramChannelToken("123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11");
+   * ```
+   */
+  async setTelegramChannelToken(botToken: string, accountId?: string): Promise<void> {
+    const path = accountId
+      ? `channels.telegram.accounts.${accountId}.botToken`
+      : "channels.telegram.botToken";
+    await this._core.request("config.patch", { patch: { [path]: botToken } });
+  }
+
+  /**
+   * Set a Discord bot token to connect the Discord channel.
+   *
+   * ```ts
+   * await claw.setDiscordChannelToken("MTIzNDU2Nzg5MDEy...");
+   * ```
+   */
+  async setDiscordChannelToken(botToken: string, accountId?: string): Promise<void> {
+    const path = accountId
+      ? `channels.discord.accounts.${accountId}.botToken`
+      : "channels.discord.botToken";
+    await this._core.request("config.patch", { patch: { [path]: botToken } });
+  }
+
+  /**
+   * Set Slack bot and app tokens to connect the Slack channel.
+   *
+   * ```ts
+   * await claw.setSlackChannelTokens("xoxb-...", "xapp-...");
+   * ```
+   */
+  async setSlackChannelTokens(
+    botToken: string,
+    appToken: string,
+    accountId?: string,
+  ): Promise<void> {
+    const prefix = accountId
+      ? `channels.slack.accounts.${accountId}`
+      : "channels.slack";
+    await this._core.request("config.patch", {
+      patch: {
+        [`${prefix}.botToken`]: botToken,
+        [`${prefix}.appToken`]: appToken,
+      },
+    });
+  }
+
+  /**
+   * Disconnect a channel and clear its credentials.
+   *
+   * ```ts
+   * await claw.logoutChannel(Channel.WhatsApp);
+   * await claw.logoutChannel(Channel.Telegram, { accountId: "bot2" });
+   * ```
+   */
+  async logoutChannel(
+    channel: Channel,
+    options?: ChannelLogoutOptions,
+  ): Promise<ChannelLogoutResult> {
+    const params: Record<string, unknown> = { channel };
+    if (options?.accountId) params.accountId = options.accountId;
+    return this._core.request<ChannelLogoutResult>("channels.logout", params);
+  }
+
+  /**
+   * Subscribe to real-time channel status changes.
+   * Returns an `unsubscribe` function.
+   *
+   * Channel status is extracted from the gateway health broadcast,
+   * which is emitted periodically and on state changes.
+   *
+   * ```ts
+   * const unsub = claw.onChannelStatus((event) => {
+   *   const wa = event.channels.whatsapp;
+   *   console.log("WhatsApp connected:", wa?.connected);
+   * });
+   *
+   * // Later:
+   * unsub();
+   * ```
+   */
+  onChannelStatus(callback: (event: ChannelStatusEvent) => void): Unsubscribe {
+    return this._core.onHealth((raw: HealthEvent) => {
+      const payload = raw as unknown as Record<string, unknown>;
+      if (payload.channels || payload.channelAccounts) {
+        callback({
+          ts: typeof payload.ts === "number" ? payload.ts : Date.now(),
+          channels: (payload.channels ?? {}) as ChannelsChannelData,
+          channelAccounts: (payload.channelAccounts ?? {}) as Record<
+            string,
+            ChannelAccountSnapshot[]
+          >,
+        });
+      }
+    });
   }
 
   // ── Utilities ──────────────────────────────────────────────────────────

@@ -591,6 +591,116 @@ const result = await claw.request<{ status: string }>(
 
 ---
 
+## Channel Management
+
+The SDK provides typed methods for connecting, disconnecting, and monitoring messaging channels (WhatsApp, Telegram, Discord, Slack, etc.).
+
+### Channel Enum
+
+Use the `Channel` enum for type-safe channel references:
+
+```ts
+import { Channel } from "@controluiclaw/sdk";
+
+Channel.WhatsApp   // "whatsapp"
+Channel.Telegram   // "telegram"
+Channel.Discord    // "discord"
+Channel.Slack      // "slack"
+Channel.Signal     // "signal"
+Channel.IMessage   // "imessage"
+Channel.GoogleChat // "googlechat"
+Channel.Nostr      // "nostr"
+```
+
+### Get Channel Status
+
+Retrieve the status of all configured channels and their accounts:
+
+```ts
+// Basic status (no probes)
+const status = await claw.getChannelsStatus();
+console.log(status.channelOrder);                // ["whatsapp", "telegram", ...]
+console.log(status.channels.whatsapp?.connected); // true / false
+
+// With health probes (slower, more accurate)
+const probed = await claw.getChannelsStatus(true, 10000);
+```
+
+### Connect WhatsApp (QR Code)
+
+WhatsApp uses QR code pairing. `startWhatsAppChannelLogin()` handles the full flow and reports progress via a callback:
+
+```ts
+await claw.startWhatsAppChannelLogin({
+  onStatus: (event) => {
+    switch (event.step) {
+      case "qr_ready":
+        renderQrCode(event.qrDataUrl);          // show QR in your UI
+        break;
+      case "scanning":
+        showSpinner("Waiting for scan...");
+        break;
+      case "authenticating":
+        showSpinner("Authenticating...");
+        break;
+      case "connected":
+        showSuccess("WhatsApp connected!");
+        break;
+      case "failed":
+        showError(event.error);
+        break;
+    }
+  },
+  timeoutMs: 120000,
+  force: false,        // set true to force re-login
+});
+```
+
+### Connect Telegram (Bot Token)
+
+```ts
+await claw.setTelegramChannelToken("123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11");
+
+// With a specific account
+await claw.setTelegramChannelToken("token", "bot2");
+```
+
+### Connect Discord (Bot Token)
+
+```ts
+await claw.setDiscordChannelToken("MTIzNDU2Nzg5MDEy...");
+```
+
+### Connect Slack (Bot + App Tokens)
+
+```ts
+await claw.setSlackChannelTokens("xoxb-...", "xapp-...");
+```
+
+### Disconnect Any Channel
+
+```ts
+await claw.logoutChannel(Channel.WhatsApp);
+await claw.logoutChannel(Channel.Telegram, { accountId: "bot2" });
+```
+
+### Real-Time Channel Status
+
+Subscribe to live channel status changes. The callback fires whenever the gateway health snapshot updates:
+
+```ts
+const unsub = claw.onChannelStatus((event) => {
+  const wa = event.channels.whatsapp;
+  console.log("WhatsApp connected:", wa?.connected);
+  console.log("Telegram running:", event.channels.telegram?.running);
+});
+
+// Later:
+unsub();
+```
+
+---
+
 ## Device Authentication
 
 The SDK uses Ed25519 key pairs for device authentication. By default, a key pair is auto-generated on first connect and cached in `sessionStorage` (browser) or in memory (Node.js).
@@ -744,9 +854,17 @@ main();
 | `disconnect()` | `void` | Close connection and stop reconnects |
 | `listSessions(options?)` | `Promise<Session[]>` | Fetch sessions with derived titles |
 | `sendPrompt(key, msg, opts?)` | `Promise<void>` | Send a message with optional thinking level |
+| `sendImagePrompt(key, msg, opts)` | `Promise<void>` | Send a message with image attachments |
 | `chatHistory(key, options?)` | `Promise<ChatHistoryResult>` | Load chat history for a session |
 | `sessionHealth(cb)` | `Unsubscribe` | Subscribe to health/connection events |
 | `chatEvents(cb)` | `Unsubscribe` | Subscribe to chat events with thinking + usage |
+| `getChannelsStatus(probe?, timeoutMs?)` | `Promise<ChannelsStatusResult>` | Get all channel statuses |
+| `startWhatsAppChannelLogin(opts)` | `Promise<void>` | Full WhatsApp QR login flow with callback |
+| `setTelegramChannelToken(token, acct?)` | `Promise<void>` | Set Telegram bot token |
+| `setDiscordChannelToken(token, acct?)` | `Promise<void>` | Set Discord bot token |
+| `setSlackChannelTokens(bot, app, acct?)` | `Promise<void>` | Set Slack bot + app tokens |
+| `logoutChannel(channel, opts?)` | `Promise<ChannelLogoutResult>` | Disconnect any channel |
+| `onChannelStatus(cb)` | `Unsubscribe` | Subscribe to real-time channel status |
 | `request<T>(method, params?)` | `Promise<T>` | Generic gateway request |
 
 ### `ControlUIClaw` Static Methods
@@ -758,23 +876,37 @@ main();
 | `extractText(msg)` | `string` | Extract readable text from any message shape |
 | `deriveSessionTitle(session, firstMsg?)` | `string` | Derive a human-readable session title |
 
-### Exported Types
+### Exported Types & Enums
 
-| Type | Description |
-| --- | --- |
-| `InitOptions` | Configuration for `init()` |
-| `ConnectResult` | Result of `connect()` |
-| `HealthEvent` | Health/connection event |
-| `ChatEvent` | Chat event with text, thinking, and usage |
-| `Session` | Session metadata |
-| `SendPromptOptions` | Options for `sendPrompt()` |
-| `TokenUsage` | Token usage counters |
-| `ThinkingLevel` | Thinking level enum |
-| `ChatMessage` | Chat message from history |
-| `ContentBlock` | Message content block (text or thinking) |
-| `ChatHistoryResult` | Chat history response |
-| `ClientInfo` | Client identification |
-| `DeviceIdentity` | Ed25519 device key pair |
+| Export | Kind | Description |
+| --- | --- | --- |
+| `Channel` | enum | Channel identifiers (`WhatsApp`, `Telegram`, `Discord`, etc.) |
+| `InitOptions` | type | Configuration for `init()` |
+| `ConnectResult` | type | Result of `connect()` |
+| `HealthEvent` | type | Health/connection event |
+| `ChatEvent` | type | Chat event with text, thinking, and usage |
+| `Session` | type | Session metadata |
+| `SendPromptOptions` | type | Options for `sendPrompt()` |
+| `SendImagePromptOptions` | type | Options for `sendImagePrompt()` |
+| `ImageAttachment` | type | Image attachment data for `sendImagePrompt()` |
+| `TokenUsage` | type | Token usage counters |
+| `ThinkingLevel` | type | Thinking level union |
+| `ChatMessage` | type | Chat message from history |
+| `ContentBlock` | type | Message content block (text or thinking) |
+| `ChatHistoryResult` | type | Chat history response |
+| `ClientInfo` | type | Client identification |
+| `DeviceIdentity` | type | Ed25519 device key pair |
+| `ChannelsStatusResult` | type | Full result from `getChannelsStatus()` |
+| `ChannelsChannelData` | type | Per-channel status map |
+| `ChannelAccountSnapshot` | type | Generic per-account status |
+| `WhatsAppChannelStatus` | type | WhatsApp-specific status fields |
+| `TelegramChannelStatus` | type | Telegram-specific status fields |
+| `DiscordChannelStatus` | type | Discord-specific status fields |
+| `SlackChannelStatus` | type | Slack-specific status fields |
+| `WhatsAppLoginOptions` | type | Options for `startWhatsAppChannelLogin()` |
+| `WhatsAppLoginStatusEvent` | type | Progress events during WhatsApp login |
+| `ChannelLogoutResult` | type | Result from `logoutChannel()` |
+| `ChannelStatusEvent` | type | Real-time channel status event |
 
 ---
 
