@@ -32,13 +32,13 @@ import {
   type ChannelStatusEvent,
   type ChannelsChannelData,
   type ChannelAccountSnapshot,
-} from "./types.js";
+} from "./types";
 
 import {
   getOrCreateDeviceIdentity,
   buildDeviceAuthPayload,
   signPayload,
-} from "./crypto.js";
+} from "./crypto";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -602,8 +602,31 @@ class CoreClient {
       return;
     }
 
+    // Tool lifecycle events → chatEvents stream
+    if (frame.event === "session.tool") {
+      const p = frame.payload as Record<string, any>;
+      const data = p?.data as Record<string, any> | undefined;
+      if (data?.phase === "start" && data?.name) {
+        const event: ChatEvent = {
+          type: "tool",
+          runId: p?.runId ?? "",
+          sessionKey: p?.sessionKey ?? "",
+          text: "",
+          tool: {
+            phase: data.phase,
+            name: data.name,
+            toolCallId: data.toolCallId ?? "",
+            args: data.args,
+          },
+          raw: p,
+        };
+        this._emitChat(event);
+      }
+      return;
+    }
+
     // Skip ticks, log anything unexpected to health
-    if (frame.event !== "tick" && frame.event !== "session.tool") {
+    if (frame.event !== "tick") {
       this._emitHealth({
         code: "event",
         message: `[${frame.event}] ${JSON.stringify(frame.payload ?? {})}`,
@@ -1043,10 +1066,9 @@ export class ControlUIClaw {
   async startWhatsAppChannelLogin(options: WhatsAppLoginOptions): Promise<void> {
     const { onStatus, force, timeoutMs, accountId } = options;
 
-    // Step 1: Initiate QR pairing
+    // Step 1: Initiate QR pairing.
     const startParams: Record<string, unknown> = {};
     if (force !== undefined) startParams.force = force;
-    if (timeoutMs !== undefined) startParams.timeoutMs = timeoutMs;
     if (accountId !== undefined) startParams.accountId = accountId;
 
     let startResult: Record<string, unknown>;
@@ -1054,6 +1076,7 @@ export class ControlUIClaw {
       startResult = await this._core.request<Record<string, unknown>>(
         "web.login.start",
         startParams,
+        { timeoutMs: 60_000 },
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1061,42 +1084,117 @@ export class ControlUIClaw {
       throw err;
     }
 
-    // Emit QR data
-    const qrDataUrl =
-      typeof startResult.qrDataUrl === "string"
-        ? startResult.qrDataUrl
-        : typeof startResult.qr === "string"
-          ? startResult.qr
+    const pickQr = (r: Record<string, unknown>): string | undefined =>
+      typeof r.qrDataUrl === "string"
+        ? r.qrDataUrl
+        : typeof r.qr === "string"
+          ? r.qr
           : undefined;
-    onStatus({ step: "qr_ready", qrDataUrl, message: "QR code ready — scan with your phone" });
 
-    // Step 2: Wait for scan
+    const pickMessage = (r: Record<string, unknown>): string | undefined =>
+      typeof r.message === "string" ? r.message : undefined;
+
+    const startQr = pickQr(startResult);
+    const startMsg = pickMessage(startResult);
+
+    // Gateway declines to start a new QR when the channel is already linked;
+    // signal that back through the `onStatus` channel with a `failed` step so
+    // the UI can prompt the user to relink (force: true) or disconnect first.
+    if (!startQr && startMsg && /already linked|already connected/i.test(startMsg)) {
+      onStatus({ step: "failed", error: startMsg, message: startMsg });
+      return;
+    }
+
+    onStatus({ step: "qr_ready", qrDataUrl: startQr, message: "QR code ready — scan with your phone" });
     onStatus({ step: "scanning", message: "Waiting for QR code scan..." });
 
-    const waitParams: Record<string, unknown> = {};
-    if (timeoutMs !== undefined) waitParams.timeoutMs = timeoutMs;
-    if (accountId !== undefined) waitParams.accountId = accountId;
+    // Step 2: Poll `web.login.wait` with short server-side windows so the gateway
+    // can rotate the QR every ~15-20s. Each response either carries a fresh QR
+    // (still waiting) or `connected: true`. `overallDeadline` caps the total flow.
+    const overallDeadline = Date.now() + (typeof timeoutMs === "number" ? timeoutMs : 120_000);
+    const perCallServerTimeoutMs = 15_000;
+    // Give the client-side RPC timeout a buffer above the server-side wait.
+    const perCallClientTimeoutMs = perCallServerTimeoutMs + 5_000;
+    // If the gateway returns immediately with a "no-op" message repeatedly, the
+    // login session was never initialised; stop instead of busy-looping.
+    let idleResponses = 0;
+    const idleLimit = 3;
 
-    let waitResult: Record<string, unknown>;
-    try {
-      onStatus({ step: "authenticating", message: "Authenticating..." });
-      waitResult = await this._core.request<Record<string, unknown>>(
-        "web.login.wait",
-        waitParams,
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      onStatus({ step: "failed", error: message, message: "Login failed" });
-      throw err;
+    while (Date.now() < overallDeadline) {
+      const waitParams: Record<string, unknown> = { timeoutMs: perCallServerTimeoutMs };
+      if (accountId !== undefined) waitParams.accountId = accountId;
+
+      let waitResult: Record<string, unknown>;
+      const callStart = Date.now();
+      try {
+        waitResult = await this._core.request<Record<string, unknown>>(
+          "web.login.wait",
+          waitParams,
+          { timeoutMs: perCallClientTimeoutMs },
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        onStatus({ step: "failed", error: message, message: "Login failed" });
+        throw err;
+      }
+      const callDurationMs = Date.now() - callStart;
+
+      if (waitResult.connected) {
+        onStatus({ step: "authenticating", message: "Authenticating..." });
+        onStatus({ step: "connected", message: "WhatsApp connected" });
+        return;
+      }
+
+      const rotatedQr = pickQr(waitResult);
+      if (rotatedQr) {
+        idleResponses = 0;
+        onStatus({ step: "qr_ready", qrDataUrl: rotatedQr, message: "QR refreshed — scan now" });
+      }
+
+      if (typeof waitResult.error === "string" && waitResult.error) {
+        onStatus({ step: "failed", error: waitResult.error, message: "WhatsApp login failed" });
+        throw new Error(waitResult.error);
+      }
+
+      const noOpMsg = pickMessage(waitResult);
+      if (!rotatedQr && callDurationMs < 1_000 && noOpMsg && /no active|not in progress|not started/i.test(noOpMsg)) {
+        idleResponses += 1;
+        if (idleResponses >= idleLimit) {
+          onStatus({ step: "failed", error: noOpMsg, message: noOpMsg });
+          return;
+        }
+      }
     }
 
-    if (waitResult.connected) {
-      onStatus({ step: "connected", message: "WhatsApp connected" });
-    } else {
-      const error = typeof waitResult.error === "string" ? waitResult.error : "Login did not complete";
-      onStatus({ step: "failed", error, message: "WhatsApp login failed" });
-      throw new Error(error);
-    }
+    const timeoutErr = "QR login timed out before completion";
+    onStatus({ step: "failed", error: timeoutErr, message: "WhatsApp login timed out" });
+    throw new Error(timeoutErr);
+  }
+
+  /**
+   * Apply a deep-merge patch to the gateway config. Uses the `config.patch`
+   * RPC contract: a `raw` JSON5 payload plus the `baseHash` returned by
+   * `config.get`, so the gateway can detect concurrent edits.
+   */
+  private async patchConfigDeep(patch: Record<string, unknown>): Promise<void> {
+    const snapshot = await this._core.request<{ hash?: string }>("config.get", {});
+    const baseHash = typeof snapshot?.hash === "string" ? snapshot.hash : undefined;
+    await this._core.request("config.patch", {
+      raw: JSON.stringify(patch),
+      ...(baseHash ? { baseHash } : {}),
+    });
+  }
+
+  /**
+   * Configure Telegram DM allowlist via config.patch — equivalent to setting
+   * `channels.telegram.dmPolicy = "allowlist"` + `channels.telegram.allowFrom = userIds`.
+   * The docs recommend this over pairing codes for one-owner bots.
+   */
+  async setTelegramAllowlist(userIds: number[], accountId?: string): Promise<void> {
+    const allowFromPatch = accountId
+      ? { accounts: { [accountId]: { dmPolicy: "allowlist" as const, allowFrom: userIds } } }
+      : { dmPolicy: "allowlist" as const, allowFrom: userIds };
+    await this.patchConfigDeep({ channels: { telegram: allowFromPatch } });
   }
 
   /**
@@ -1107,10 +1205,10 @@ export class ControlUIClaw {
    * ```
    */
   async setTelegramChannelToken(botToken: string, accountId?: string): Promise<void> {
-    const path = accountId
-      ? `channels.telegram.accounts.${accountId}.botToken`
-      : "channels.telegram.botToken";
-    await this._core.request("config.patch", { patch: { [path]: botToken } });
+    const telegramPatch = accountId
+      ? { accounts: { [accountId]: { botToken } } }
+      : { botToken };
+    await this.patchConfigDeep({ channels: { telegram: telegramPatch } });
   }
 
   /**
@@ -1121,10 +1219,10 @@ export class ControlUIClaw {
    * ```
    */
   async setDiscordChannelToken(botToken: string, accountId?: string): Promise<void> {
-    const path = accountId
-      ? `channels.discord.accounts.${accountId}.botToken`
-      : "channels.discord.botToken";
-    await this._core.request("config.patch", { patch: { [path]: botToken } });
+    const discordPatch = accountId
+      ? { accounts: { [accountId]: { botToken } } }
+      : { botToken };
+    await this.patchConfigDeep({ channels: { discord: discordPatch } });
   }
 
   /**
@@ -1139,15 +1237,10 @@ export class ControlUIClaw {
     appToken: string,
     accountId?: string,
   ): Promise<void> {
-    const prefix = accountId
-      ? `channels.slack.accounts.${accountId}`
-      : "channels.slack";
-    await this._core.request("config.patch", {
-      patch: {
-        [`${prefix}.botToken`]: botToken,
-        [`${prefix}.appToken`]: appToken,
-      },
-    });
+    const slackPatch = accountId
+      ? { accounts: { [accountId]: { botToken, appToken } } }
+      : { botToken, appToken };
+    await this.patchConfigDeep({ channels: { slack: slackPatch } });
   }
 
   /**

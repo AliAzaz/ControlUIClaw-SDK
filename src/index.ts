@@ -2,7 +2,7 @@
 // ControlUIClaw SDK — Public API
 // ---------------------------------------------------------------------------
 
-export { ControlUIClaw } from "./client.js";
+export { ControlUIClaw } from "./client";
 
 // Crypto utilities (for advanced / custom auth flows)
 export {
@@ -12,10 +12,10 @@ export {
   signPayload,
   base64UrlEncode,
   base64UrlDecode,
-} from "./crypto.js";
+} from "./crypto";
 
 // Enums
-export { Channel } from "./types.js";
+export { Channel } from "./types";
 
 // Types
 export type {
@@ -56,4 +56,4 @@ export type {
   WhatsAppLoginStatusEvent,
   WhatsAppLoginStep,
   ChannelStatusEvent,
-} from "./types.js";
+} from "./types";
