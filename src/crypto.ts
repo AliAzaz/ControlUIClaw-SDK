@@ -7,7 +7,7 @@
 // the @noble/ed25519 library for older browsers.
 // ---------------------------------------------------------------------------
 
-import type { DeviceIdentity, DeviceAuthFields } from "./types.js";
+import type { DeviceIdentity, DeviceAuthFields } from "./types";
 
 // ── Base64url helpers ──────────────────────────────────────────────────────
 
@@ -101,7 +101,7 @@ async function initCryptoBackend(): Promise<CryptoBackend> {
     const noble = await import("@noble/ed25519");
     _backend = {
       async generateKeypair() {
-        const privateKey = noble.utils.randomPrivateKey();
+        const privateKey = noble.utils.randomSecretKey();
         const publicKey = await noble.getPublicKeyAsync(privateKey);
         return { publicKey, privateKey };
       },

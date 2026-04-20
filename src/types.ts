@@ -281,9 +281,10 @@ export interface HealthEvent {
  * - `final`   — run completed, full message available
  * - `error`   — run failed
  * - `aborted` — run was cancelled
+ * - `tool`    — a tool call started on the server side
  */
 export interface ChatEvent {
-  type: "stream" | "final" | "error" | "aborted";
+  type: "stream" | "final" | "error" | "aborted" | "tool";
   runId: string;
   sessionKey: string;
   /** Extracted text (accumulated for delta, full for final). */
@@ -294,6 +295,8 @@ export interface ChatEvent {
   usage?: TokenUsage;
   /** Model identifier (e.g. "gpt-5.4", "sonnet-4.6") when reported by the gateway. */
   model?: string;
+  /** Tool call info (only for type === "tool"). */
+  tool?: { phase: string; name: string; toolCallId: string; args?: Record<string, unknown> };
   /** Raw payload from the gateway for advanced use. */
   raw: Record<string, unknown>;
 }
