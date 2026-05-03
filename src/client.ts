@@ -1161,7 +1161,7 @@ export class ControlUIClaw {
         idleResponses += 1;
         if (idleResponses >= idleLimit) {
           onStatus({ step: "failed", error: noOpMsg, message: noOpMsg });
-          return;
+          throw new Error(noOpMsg);
         }
       }
     }
