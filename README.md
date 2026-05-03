@@ -1,11 +1,13 @@
-# ControlUIClaw SDK — WebSocket Integration Guide
+# ControlUIClaw SDK — WebSocket Integration Guide (Integrate your openclaw with custom UI)
 
-A developer guide for connecting to the ControlUIClaw gateway via the `@controluiclaw/sdk` WebSocket client. Covers initialization, connection lifecycle, event mapping, health monitoring, extended thinking, token usage tracking, and graceful teardown.
+[![npm](https://img.shields.io/npm/v/@controluiclaw/sdk)](https://www.npmjs.com/package/@controluiclaw/sdk)
+
+A developer guide for connecting to the OpenClaw gateway via the `@controluiclaw/sdk` WebSocket client. Covers initialization, connection lifecycle, event mapping, health monitoring, extended thinking, token usage tracking, and graceful teardown.
 
 ## Prerequisites
 
 - Node.js 18+ or a modern browser with WebSocket and Web Crypto support
-- A running ControlUIClaw gateway (default port `18789`)
+- A running OpenClaw gateway (default port `18789`)
 - An auth token (optional if device-only auth is sufficient)
 
 Install the SDK:

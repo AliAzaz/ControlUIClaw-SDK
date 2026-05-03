@@ -121,6 +121,175 @@
       color: var(--text-sidebar-dim); text-align: center;
     }
 
+    /* ── Sidebar Nav Tabs ────────────────────────────────────── */
+    .sidebar-nav {
+      display: flex; border-bottom: 1px solid #333;
+    }
+    .sidebar-nav button {
+      flex: 1; padding: 10px 0; border: none; background: transparent;
+      color: var(--text-sidebar-dim); font-size: 12px; font-weight: 600;
+      cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px;
+      border-bottom: 2px solid transparent; transition: all 0.15s;
+    }
+    .sidebar-nav button:hover { color: var(--text-sidebar); background: var(--bg-sidebar-hover); }
+    .sidebar-nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .sidebar-panel { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    .sidebar-panel.active { display: flex; }
+
+    /* ── Channels View ───────────────────────────────────────── */
+    .channels-view { display: none; flex: 1; flex-direction: column; height: 100vh; background: #141414; }
+    .channels-view.active { display: flex; }
+    .chat-view { display: flex; flex: 1; flex-direction: column; height: 100vh; }
+    .chat-view.hidden { display: none; }
+
+    .channels-header {
+      padding: 32px 40px 12px; flex-shrink: 0;
+    }
+    .channels-header h2 { font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+    .channels-header p { font-size: 14px; color: #888; }
+
+    .channels-list {
+      flex: 1; overflow-y: auto; padding: 16px 40px 40px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .channels-list::-webkit-scrollbar { width: 4px; }
+    .channels-list::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+
+    /* ── Channel Row (collapsed) ─────────────────────────────── */
+    .ch-row {
+      background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 14px;
+      overflow: hidden; transition: border-color 0.2s;
+    }
+    .ch-row.expanded { border-color: #3a3a3a; }
+    .ch-row-header {
+      display: flex; align-items: center; padding: 16px 20px; gap: 14px; cursor: default;
+    }
+    .ch-icon {
+      width: 42px; height: 42px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; flex-shrink: 0;
+    }
+    .ch-icon.whatsapp { background: #25d366; color: #fff; }
+    .ch-icon.telegram { background: #229ed9; color: #fff; }
+    .ch-icon.discord { background: #5865f2; color: #fff; }
+    .ch-icon.slack { background: #e01e5a; color: #fff; }
+    .ch-icon.signal { background: #3a76f0; color: #fff; }
+    .ch-icon.imessage { background: #34c759; color: #fff; }
+    .ch-icon.googlechat { background: #1a73e8; color: #fff; }
+    .ch-icon.nostr { background: #8b5cf6; color: #fff; }
+    .ch-icon.default { background: #555; color: #fff; }
+
+    .ch-icon svg { width: 22px; height: 22px; fill: currentColor; }
+    .ch-label { font-size: 16px; font-weight: 600; color: #fff; }
+    .ch-row-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+    .btn-ch-connect {
+      padding: 8px 22px; border-radius: 8px; border: none; font-size: 13px;
+      font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-ch-connect.connect { background: #c87533; color: #fff; }
+    .btn-ch-connect.connect:hover { background: #d98a44; }
+    .btn-ch-connect.close { background: #333; color: #ccc; }
+    .btn-ch-connect.close:hover { background: #444; }
+    .btn-ch-connect.coming-soon {
+      background: transparent; color: #666; border: 1px solid #333;
+      cursor: default; font-weight: 500;
+    }
+    .btn-ch-connect.connected-badge {
+      background: #22c55e22; color: #22c55e; cursor: default;
+    }
+
+    /* ── Channel Row (expanded body) ─────────────────────────── */
+    .ch-row-body {
+      display: none; padding: 0 20px 24px;
+    }
+    .ch-row.expanded .ch-row-body { display: block; }
+
+    .ch-expand-content {
+      display: flex; gap: 32px; padding-top: 8px;
+      border-top: 1px solid #2a2a2a; padding-top: 20px;
+    }
+
+    /* Left: How to connect steps */
+    .ch-steps { flex: 1; min-width: 200px; }
+    .ch-steps-title { font-size: 13px; font-weight: 600; color: #999; margin-bottom: 16px; }
+    .ch-step {
+      display: flex; gap: 12px; margin-bottom: 16px; align-items: flex-start;
+    }
+    .ch-step-num {
+      width: 26px; height: 26px; border-radius: 50%; background: #c87533;
+      color: #fff; font-size: 13px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .ch-step-text { flex: 1; }
+    .ch-step-text strong { display: block; color: #e0e0e0; font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+    .ch-step-text span { color: #888; font-size: 12px; line-height: 1.5; }
+
+    /* Right: Input / QR area */
+    .ch-input-area { flex: 1; min-width: 220px; }
+    .ch-input-title { font-size: 13px; font-weight: 600; color: #999; margin-bottom: 12px; }
+    .ch-token-input {
+      width: 100%; padding: 11px 14px; border-radius: 8px; border: 1px solid #333;
+      background: #252525; color: #ccc; font-size: 13px; font-family: var(--mono);
+      outline: none; transition: border-color 0.15s;
+    }
+    .ch-token-input:focus { border-color: #c87533; }
+    .ch-token-input::placeholder { color: #555; }
+    .btn-save-connect {
+      width: 100%; margin-top: 12px; padding: 11px 0; border-radius: 8px; border: none;
+      background: #c87533; color: #fff; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn-save-connect:hover { background: #d98a44; }
+    .btn-save-connect:disabled { opacity: 0.4; cursor: default; }
+
+    /* Slack: two inputs */
+    .ch-slack-inputs { display: flex; flex-direction: column; gap: 10px; }
+    .ch-slack-inputs .ch-input-label { font-size: 11px; color: #777; margin-bottom: 3px; }
+
+    /* WhatsApp QR */
+    .ch-qr-area { display: flex; flex-direction: column; align-items: center; }
+    .ch-qr-placeholder {
+      width: 180px; height: 180px; border-radius: 10px; background: #fff;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 12px; overflow: hidden;
+    }
+    .ch-qr-placeholder img { width: 100%; height: 100%; object-fit: contain; }
+    .ch-qr-placeholder .qr-spinner {
+      width: 32px; height: 32px; border: 3px solid #eee;
+      border-top-color: #c87533; border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .ch-pairing-code {
+      display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+      background: #252525; border-radius: 8px; border: 1px solid #333;
+    }
+    .ch-pairing-code span { font-family: var(--mono); font-size: 14px; color: #ccc; letter-spacing: 1px; }
+    .ch-pairing-code button {
+      background: none; border: none; color: #888; cursor: pointer;
+      font-size: 16px; padding: 2px 4px; transition: color 0.15s;
+    }
+    .ch-pairing-code button:hover { color: #fff; }
+    .ch-qr-status { font-size: 12px; color: #888; margin-top: 10px; text-align: center; }
+    .ch-qr-status.success { color: #22c55e; }
+    .ch-qr-status.error { color: #ef4444; }
+
+    /* ── Channel list in sidebar ─────────────────────────────── */
+    .channel-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
+    .channel-list-item {
+      padding: 8px 12px; border-radius: 8px; cursor: default; margin-bottom: 2px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .channel-list-item .ch-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .channel-list-item .ch-dot.on { background: var(--green); }
+    .channel-list-item .ch-dot.off { background: #555; }
+    .channel-list-item .ch-dot.warn { background: var(--yellow); }
+    .channel-list-item .ch-name { font-size: 13px; color: var(--text-sidebar); }
+    .channel-list-item .ch-state { font-size: 11px; color: var(--text-sidebar-dim); margin-left: auto; }
+
     /* ── Main Chat Area ──────────────────────────────────────── */
     .main { flex: 1; display: flex; flex-direction: column; height: 100vh; }
 
@@ -267,7 +436,7 @@
     <label>Gateway URL</label>
     <input id="url" value="ws://localhost:18789" spellcheck="false" />
     <label>Token</label>
-    <input id="token" type="password" placeholder="Optional" value="a280db54b70df35684f66c3f7d21b6ee9747875aa8160b7c" />
+    <input id="token" type="password" placeholder="Optional" value="mWPzkdOSV37FK0RWKS3YFSbHkaUAYscifD7UyJgvVLXTldyS" />
     <div class="connect-row">
       <button class="btn btn-connect" id="btnConnect">Connect</button>
       <button class="btn btn-disconnect" id="btnDisconnect">&#x2715;</button>
@@ -279,18 +448,46 @@
     <span class="status-text" id="statusLabel">Disconnected</span>
   </div>
 
-  <div class="sessions-header">
-    <span>Sessions</span>
-    <button class="btn-icon" id="btnNewSession" title="New session">+</button>
+  <div class="sidebar-nav">
+    <button class="active" id="navChat" data-tab="chat">Chat</button>
+    <button id="navChannels" data-tab="channels">Channels</button>
   </div>
 
-  <div class="session-list" id="sessionList"></div>
+  <!-- Chat panel -->
+  <div class="sidebar-panel active" id="panelChat">
+    <div class="sessions-header">
+      <span>Sessions</span>
+      <button class="btn-icon" id="btnNewSession" title="New session">+</button>
+    </div>
+    <div class="session-list" id="sessionList"></div>
+  </div>
+
+  <!-- Channels panel -->
+  <div class="sidebar-panel" id="panelChannels">
+    <div class="sessions-header">
+      <span>Channels</span>
+      <button class="btn-icon" id="btnRefreshChannels" title="Refresh">&#x21bb;</button>
+    </div>
+    <div class="channel-list" id="channelSidebarList"></div>
+  </div>
 
   <div class="sidebar-footer">ControlUIClaw SDK Test Interface</div>
 </aside>
 
 <!-- ── Main ─────────────────────────────────────────────────── -->
 <div class="main">
+
+  <!-- Channels View -->
+  <div class="channels-view" id="channelsView">
+    <div class="channels-header">
+      <h2>Channels</h2>
+      <p>Connect your messaging apps to start receiving and sending messages.</p>
+    </div>
+    <div class="channels-list" id="channelsList"></div>
+  </div>
+
+  <!-- Chat View -->
+  <div class="chat-view" id="chatView">
   <div class="chat-header">
     <div>
       <div class="session-title" id="chatTitle">New Conversation</div>
@@ -334,6 +531,7 @@
   <div class="event-log" id="eventLog">
     <div class="event-log-inner" id="logInner"></div>
   </div>
+  </div><!-- /chat-view -->
 </div>
 
 <script>
@@ -718,14 +916,19 @@
     }
 
     await refreshSessions();
+    startChannelStatusListener();
+    refreshChannels();
   });
 
   // ── Disconnect ────────────────────────────────────────────
   $("btnDisconnect").addEventListener("click", function() {
     if (unsubHealth) unsubHealth();
     if (unsubChat) unsubChat();
+    if (unsubChannelStatus) unsubChannelStatus();
     if (claw) claw.disconnect();
     claw = null;
+    channelData = null;
+    renderChannelSidebar();
     setStatus("");
   });
 
@@ -767,6 +970,376 @@
   msgInput.addEventListener("keydown", function(e) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
+
+  // ── Sidebar Tab Navigation ──────────────────────────────────
+  var currentTab = "chat";
+  var navBtns = document.querySelectorAll(".sidebar-nav button");
+
+  navBtns.forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      var tab = btn.dataset.tab;
+      currentTab = tab;
+      navBtns.forEach(function(b) { b.classList.toggle("active", b.dataset.tab === tab); });
+      $("panelChat").classList.toggle("active", tab === "chat");
+      $("panelChannels").classList.toggle("active", tab === "channels");
+      $("chatView").classList.toggle("hidden", tab === "channels");
+      $("channelsView").classList.toggle("active", tab === "channels");
+      if (tab === "channels") refreshChannels();
+    });
+  });
+
+  // ── Channel Config ──────────────────────────────────────────
+  var channelLabelsDefault = {
+    whatsapp: "WhatsApp", telegram: "Telegram", discord: "Discord",
+    slack: "Slack", signal: "Signal", imessage: "iMessage",
+    googlechat: "Google Chat", nostr: "Nostr",
+  };
+
+  // SVG icons per channel
+  var channelSvgs = {
+    whatsapp: '<svg viewBox="0 0 24 24"><path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.28-.1-.48-.15-.68.15s-.78.97-.96 1.17-.35.22-.65.07c-.3-.15-1.27-.47-2.42-1.49-.9-.8-1.5-1.78-1.67-2.08s-.02-.46.13-.61c.13-.14.3-.35.44-.52.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.52-.08-.15-.68-1.64-.93-2.24-.25-.6-.5-.5-.68-.51h-.58c-.2 0-.52.07-.8.38s-1.04 1.02-1.04 2.48 1.07 2.88 1.22 3.08c.15.2 2.1 3.2 5.08 4.49.71.31 1.27.49 1.7.63.71.22 1.36.2 1.87.12.57-.09 1.76-.72 2.01-1.41.25-.7.25-1.3.18-1.42-.08-.13-.28-.2-.58-.35zM12.05 21.8c-1.83 0-3.63-.49-5.2-1.42l-.37-.22-3.87 1.02 1.04-3.78-.24-.38A9.77 9.77 0 012.2 12.05c0-5.42 4.42-9.84 9.85-9.84a9.78 9.78 0 016.96 2.88 9.78 9.78 0 012.89 6.96c0 5.43-4.42 9.85-9.85 9.85zm0-21.6C5.63.2.4 5.43.4 12.05c0 2.08.54 4.12 1.58 5.92L.2 24l6.2-1.63a11.7 11.7 0 005.65 1.44c6.62 0 12.01-5.38 12.01-12S18.67.2 12.05.2z"/></svg>',
+    telegram: '<svg viewBox="0 0 24 24"><path d="M11.99 0C5.37 0 0 5.37 0 12s5.37 12 11.99 12S24 18.63 24 12 18.61 0 11.99 0zm5.57 8.15l-1.67 7.88c-.12.57-.46.71-.93.44l-2.57-1.9-1.24 1.2c-.14.14-.25.25-.52.25l.19-2.63 4.82-4.35c.21-.19-.05-.29-.32-.12L9.37 13l-2.53-.79c-.55-.17-.56-.55.12-.82l9.88-3.81c.46-.17.86.11.72.77z"/></svg>',
+    discord: '<svg viewBox="0 0 24 24"><path d="M20.32 4.37A19.8 19.8 0 0015.44 3c-.21.38-.46.88-.63 1.28a18.4 18.4 0 00-5.62 0A13.3 13.3 0 008.56 3a19.7 19.7 0 00-4.88 1.37C.53 9.05-.33 13.6.1 18.09A19.9 19.9 0 006.05 21a14.5 14.5 0 001.26-2.06c-.7-.26-1.36-.58-2-.94.17-.12.33-.25.49-.38a14.18 14.18 0 0012.4 0c.16.13.32.26.49.38-.64.37-1.3.68-2 .94A14.5 14.5 0 0017.95 21a19.85 19.85 0 005.95-2.91c.51-5.31-.86-9.82-3.58-13.72zM8.01 15.34c-1.18 0-2.15-1.09-2.15-2.42s.95-2.42 2.15-2.42 2.17 1.09 2.15 2.42c0 1.33-.95 2.42-2.15 2.42zm7.98 0c-1.18 0-2.15-1.09-2.15-2.42s.95-2.42 2.15-2.42 2.17 1.09 2.15 2.42c0 1.33-.94 2.42-2.15 2.42z"/></svg>',
+    slack: '<svg viewBox="0 0 24 24"><path d="M5.04 15.16a2.53 2.53 0 01-2.52 2.52A2.53 2.53 0 010 15.16a2.53 2.53 0 012.52-2.52h2.52v2.52zm1.27 0a2.53 2.53 0 012.52-2.52 2.53 2.53 0 012.52 2.52v6.32A2.53 2.53 0 018.83 24a2.53 2.53 0 01-2.52-2.52v-6.32zM8.83 5.04a2.53 2.53 0 01-2.52-2.52A2.53 2.53 0 018.83 0a2.53 2.53 0 012.52 2.52v2.52H8.83zm0 1.27a2.53 2.53 0 012.52 2.52 2.53 2.53 0 01-2.52 2.52H2.52A2.53 2.53 0 010 8.83a2.53 2.53 0 012.52-2.52h6.31zM18.96 8.83a2.53 2.53 0 012.52-2.52A2.53 2.53 0 0124 8.83a2.53 2.53 0 01-2.52 2.52h-2.52V8.83zm-1.27 0a2.53 2.53 0 01-2.52 2.52 2.53 2.53 0 01-2.52-2.52V2.52A2.53 2.53 0 0115.17 0a2.53 2.53 0 012.52 2.52v6.31zM15.17 18.96a2.53 2.53 0 012.52 2.52A2.53 2.53 0 0115.17 24a2.53 2.53 0 01-2.52-2.52v-2.52h2.52zm0-1.27a2.53 2.53 0 01-2.52-2.52 2.53 2.53 0 012.52-2.52h6.31A2.53 2.53 0 0124 15.17a2.53 2.53 0 01-2.52 2.52h-6.31z"/></svg>',
+    signal: '<svg viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm0 3.6c4.64 0 8.4 3.76 8.4 8.4s-3.76 8.4-8.4 8.4S3.6 16.64 3.6 12 7.36 3.6 12 3.6z"/></svg>',
+    imessage: '<svg viewBox="0 0 24 24"><path d="M12 1.5C5.65 1.5.5 5.95.5 11.4c0 3.13 1.66 5.93 4.24 7.78-.12 1.2-.64 2.97-1.74 3.32 2.1-.04 3.83-1.24 4.76-2.14 1.32.38 2.76.6 4.24.6 6.35 0 11.5-4.45 11.5-9.9S18.35 1.5 12 1.5z"/></svg>',
+    googlechat: '<svg viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12l4.8 4.8V12c0-3.98 3.22-7.2 7.2-7.2h4.8L12 0zm0 24c6.63 0 12-5.37 12-12l-4.8-4.8V12c0 3.98-3.22 7.2-7.2 7.2H7.2L12 24z"/></svg>',
+    nostr: '<svg viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18L19.82 8 12 11.82 4.18 8 12 4.18zM4 9.18l7 3.5V19l-7-3.5V9.18zm16 0V15.5L13 19v-6.32l7-3.5z"/></svg>',
+  };
+
+  // Step instructions per channel type
+  var channelSteps = {
+    telegram: [
+      { title: "Open @BotFather", desc: "Search for @BotFather in Telegram and start a chat." },
+      { title: "Create a new bot", desc: "Send /newbot and follow the prompts to name your bot." },
+      { title: "Paste your token", desc: "Copy the HTTP API token and paste it below." },
+    ],
+    whatsapp: [
+      { title: "Open Linked Devices", desc: "Go to WhatsApp \u2192 Settings \u2192 Linked Devices." },
+      { title: "Tap Link a Device", desc: "Tap 'Link a Device' and allow camera access." },
+      { title: "Scan QR code", desc: "Point your phone at the QR code shown below." },
+    ],
+    discord: [
+      { title: "Open Discord Developer Portal", desc: "Go to discord.com/developers and create an application." },
+      { title: "Create a Bot", desc: "Navigate to Bot tab and click 'Add Bot'." },
+      { title: "Copy the token", desc: "Click 'Reset Token', copy it and paste it below." },
+    ],
+    slack: [
+      { title: "Create a Slack App", desc: "Go to api.slack.com/apps and create a new app." },
+      { title: "Enable Socket Mode", desc: "Enable Socket Mode and generate an App-Level Token." },
+      { title: "Add Bot Token Scopes", desc: "Add required scopes under OAuth, install the app, then paste both tokens." },
+    ],
+  };
+
+  // Which channels are "coming soon" (no connect support yet)
+  var comingSoonChannels = { signal: true, imessage: true, googlechat: true, nostr: true };
+
+  // Track which channel row is expanded
+  var expandedChannel = null;
+
+  // ── Channel State ──────────────────────────────────────────
+  var channelData = null;
+
+  function resolveChannelState(ch) {
+    if (!ch) return "unknown";
+    if (ch.connected) return "connected";
+    if (ch.running) return "running";
+    if (ch.configured) return "configured";
+    return "disconnected";
+  }
+
+  // ── Render Channels List ───────────────────────────────────
+  function renderChannelsList() {
+    var container = $("channelsList");
+
+    var defaultOrder = ["telegram", "whatsapp", "discord", "slack", "signal", "imessage", "googlechat", "nostr"];
+    var order = (channelData && channelData.channelOrder) ? channelData.channelOrder : defaultOrder;
+    var labels = (channelData && channelData.channelLabels) || {};
+    var channels = (channelData && channelData.channels) || {};
+
+    var html = "";
+    for (var i = 0; i < order.length; i++) {
+      var key = order[i];
+      var ch = channels[key] || null;
+      var label = labels[key] || channelLabelsDefault[key] || key;
+      var state = resolveChannelState(ch);
+      var svg = channelSvgs[key] || channelSvgs.nostr;
+      var iconCls = channelSvgs[key] ? key : "default";
+      var isExpanded = expandedChannel === key;
+      var isComing = comingSoonChannels[key] && state !== "connected" && state !== "running" && state !== "configured";
+
+      html += '<div class="ch-row' + (isExpanded ? ' expanded' : '') + '" id="chrow-' + key + '">';
+
+      // Header row
+      html += '<div class="ch-row-header">';
+      html += '<div class="ch-icon ' + iconCls + '">' + svg + '</div>';
+      html += '<div class="ch-label">' + escapeHtml(label) + '</div>';
+      html += '<div class="ch-row-right">';
+
+      if (isComing) {
+        html += '<span class="btn-ch-connect coming-soon">Coming Soon</span>';
+      } else if (state === "connected") {
+        if (isExpanded) {
+          html += '<button class="btn-ch-connect close" onclick="toggleChannel(null)">Close</button>';
+        } else {
+          html += '<span class="btn-ch-connect connected-badge">Connected</span>';
+          html += '<button class="btn-ch-connect close" style="margin-left:6px" onclick="toggleChannel(\'' + key + '\')">Manage</button>';
+        }
+      } else if (isExpanded) {
+        html += '<button class="btn-ch-connect close" onclick="toggleChannel(null)">Close</button>';
+      } else {
+        html += '<button class="btn-ch-connect connect" onclick="toggleChannel(\'' + key + '\')">Connect</button>';
+      }
+
+      html += '</div></div>';
+
+      // Expanded body
+      html += '<div class="ch-row-body">';
+      html += '<div class="ch-expand-content">';
+
+      // Left: steps
+      var steps = channelSteps[key];
+      if (steps) {
+        html += '<div class="ch-steps">';
+        html += '<div class="ch-steps-title">How to connect</div>';
+        for (var s = 0; s < steps.length; s++) {
+          html += '<div class="ch-step">';
+          html += '<div class="ch-step-num">' + (s + 1) + '</div>';
+          html += '<div class="ch-step-text"><strong>' + escapeHtml(steps[s].title) + '</strong><span>' + escapeHtml(steps[s].desc) + '</span></div>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+
+      // Right: input area
+      html += '<div class="ch-input-area">';
+      if (key === "whatsapp") {
+        html += '<div class="ch-input-title">Scan QR Code</div>';
+        html += '<div class="ch-qr-area">';
+        html += '<div class="ch-qr-placeholder" id="waQrBox"><div class="qr-spinner" id="waQrSpinner" style="display:none"></div><img id="waQrImg" style="display:none" /></div>';
+        html += '<div class="ch-qr-status" id="waQrStatus">Click below to start pairing</div>';
+        html += '</div>';
+        html += '<button class="btn-save-connect" onclick="connectWhatsApp()" id="btnWaStart">' + (state === "connected" ? 'Reconnect' : 'Start QR Pairing') + '</button>';
+        if (state === "connected" || state === "running" || state === "configured") {
+          html += '<button class="btn-save-connect" style="background:#333;margin-top:8px" onclick="disconnectChannel(\'whatsapp\')">Disconnect</button>';
+        }
+      } else if (key === "telegram") {
+        html += '<div class="ch-input-title">Bot Token</div>';
+        html += '<input class="ch-token-input" id="telegramTokenInput" type="password" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v" />';
+        html += '<button class="btn-save-connect" onclick="connectTelegram()">Save & Connect</button>';
+        if (state === "connected" || state === "running" || state === "configured") {
+          html += '<button class="btn-save-connect" style="background:#333;margin-top:8px" onclick="disconnectChannel(\'telegram\')">Disconnect</button>';
+        }
+      } else if (key === "discord") {
+        html += '<div class="ch-input-title">Bot Token</div>';
+        html += '<input class="ch-token-input" id="discordTokenInput" type="password" placeholder="MTIzNDU2Nzg5MDEy..." />';
+        html += '<button class="btn-save-connect" onclick="connectDiscord()">Save & Connect</button>';
+        if (state === "connected" || state === "running" || state === "configured") {
+          html += '<button class="btn-save-connect" style="background:#333;margin-top:8px" onclick="disconnectChannel(\'discord\')">Disconnect</button>';
+        }
+      } else if (key === "slack") {
+        html += '<div class="ch-slack-inputs">';
+        html += '<div><div class="ch-input-label">Bot Token</div><input class="ch-token-input" id="slackBotInput" type="password" placeholder="xoxb-..." /></div>';
+        html += '<div><div class="ch-input-label">App Token</div><input class="ch-token-input" id="slackAppInput" type="password" placeholder="xapp-..." /></div>';
+        html += '</div>';
+        html += '<button class="btn-save-connect" onclick="connectSlack()">Save & Connect</button>';
+        if (state === "connected" || state === "running" || state === "configured") {
+          html += '<button class="btn-save-connect" style="background:#333;margin-top:8px" onclick="disconnectChannel(\'slack\')">Disconnect</button>';
+        }
+      }
+      html += '</div>';
+
+      html += '</div></div></div>';
+    }
+
+    container.innerHTML = html;
+  }
+
+  function toggleChannel(key) {
+    expandedChannel = (expandedChannel === key) ? null : key;
+    renderChannelsList();
+  }
+  window.toggleChannel = toggleChannel;
+
+  // ── Render Channel Sidebar List ────────────────────────────
+  function renderChannelSidebar() {
+    var list = $("channelSidebarList");
+    if (!channelData) { list.innerHTML = ""; return; }
+    var order = channelData.channelOrder || [];
+    var labels = channelData.channelLabels || {};
+    var channels = channelData.channels || {};
+    var html = "";
+    for (var i = 0; i < order.length; i++) {
+      var key = order[i];
+      var ch = channels[key] || null;
+      var label = labels[key] || channelLabelsDefault[key] || key;
+      var state = resolveChannelState(ch);
+      var dotCls = state === "connected" ? "on" : state === "running" || state === "configured" ? "warn" : "off";
+      html += '<div class="channel-list-item">';
+      html += '<span class="ch-dot ' + dotCls + '"></span>';
+      html += '<span class="ch-name">' + escapeHtml(label) + '</span>';
+      html += '<span class="ch-state">' + state + '</span>';
+      html += '</div>';
+    }
+    list.innerHTML = html;
+  }
+
+  // ── Refresh Channels ──────────────────────────────────────
+  async function refreshChannels() {
+    // Always render immediately with whatever data we have
+    renderChannelsList();
+    renderChannelSidebar();
+    if (!claw || !claw.isConnected) return;
+    try {
+      channelData = await claw.getChannelsStatus(false);
+      renderChannelsList();
+      renderChannelSidebar();
+      logEvent("info", "Channels status refreshed");
+    } catch (err) {
+      logEvent("error", "Channel refresh failed: " + err.message);
+      // Still render with defaults on error
+      renderChannelsList();
+    }
+  }
+
+  $("btnRefreshChannels").addEventListener("click", function() { refreshChannels(); });
+
+  // ── Channel Actions ───────────────────────────────────────
+  async function connectWhatsApp() {
+    if (!claw || !claw.isConnected) return;
+    var qrImg = $("waQrImg");
+    var qrSpinner = $("waQrSpinner");
+    var qrStatus = $("waQrStatus");
+    var btn = $("btnWaStart");
+    if (btn) btn.disabled = true;
+    if (qrSpinner) { qrSpinner.style.display = "block"; }
+    if (qrImg) { qrImg.style.display = "none"; }
+    if (qrStatus) { qrStatus.textContent = "Starting..."; qrStatus.className = "ch-qr-status"; }
+
+    try {
+      await claw.startWhatsAppChannelLogin({
+        timeoutMs: 120000,
+        onStatus: function(event) {
+          switch (event.step) {
+            case "qr_ready":
+              if (qrSpinner) qrSpinner.style.display = "none";
+              if (event.qrDataUrl && qrImg) {
+                qrImg.src = event.qrDataUrl;
+                qrImg.style.display = "block";
+              }
+              if (qrStatus) qrStatus.textContent = "Scan this QR code with WhatsApp";
+              break;
+            case "scanning":
+              if (qrStatus) qrStatus.textContent = "Waiting for scan...";
+              break;
+            case "authenticating":
+              if (qrStatus) qrStatus.textContent = "Authenticating...";
+              break;
+            case "connected":
+              if (qrStatus) { qrStatus.textContent = "Connected!"; qrStatus.className = "ch-qr-status success"; }
+              setTimeout(function() { refreshChannels(); }, 1500);
+              break;
+            case "failed":
+              if (qrSpinner) qrSpinner.style.display = "none";
+              if (qrStatus) { qrStatus.textContent = "Failed: " + (event.error || "unknown"); qrStatus.className = "ch-qr-status error"; }
+              break;
+          }
+          logEvent("event", "[whatsapp] " + event.step + " \u2014 " + (event.message || ""));
+        },
+      });
+    } catch (err) {
+      logEvent("error", "WhatsApp login failed: " + err.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+  window.connectWhatsApp = connectWhatsApp;
+
+  async function connectTelegram() {
+    if (!claw || !claw.isConnected) return;
+    var input = $("telegramTokenInput");
+    var token = input ? input.value.trim() : "";
+    if (!token) return;
+    try {
+      await claw.setTelegramChannelToken(token);
+      input.value = "";
+      logEvent("info", "Telegram token set");
+      expandedChannel = null;
+      await refreshChannels();
+    } catch (err) {
+      logEvent("error", "Telegram connect failed: " + err.message);
+    }
+  }
+  window.connectTelegram = connectTelegram;
+
+  async function connectDiscord() {
+    if (!claw || !claw.isConnected) return;
+    var input = $("discordTokenInput");
+    var token = input ? input.value.trim() : "";
+    if (!token) return;
+    try {
+      await claw.setDiscordChannelToken(token);
+      input.value = "";
+      logEvent("info", "Discord token set");
+      expandedChannel = null;
+      await refreshChannels();
+    } catch (err) {
+      logEvent("error", "Discord connect failed: " + err.message);
+    }
+  }
+  window.connectDiscord = connectDiscord;
+
+  async function connectSlack() {
+    if (!claw || !claw.isConnected) return;
+    var botInput = $("slackBotInput");
+    var appInput = $("slackAppInput");
+    var botToken = botInput ? botInput.value.trim() : "";
+    var appToken = appInput ? appInput.value.trim() : "";
+    if (!botToken || !appToken) return;
+    try {
+      await claw.setSlackChannelTokens(botToken, appToken);
+      botInput.value = "";
+      appInput.value = "";
+      logEvent("info", "Slack tokens set");
+      expandedChannel = null;
+      await refreshChannels();
+    } catch (err) {
+      logEvent("error", "Slack connect failed: " + err.message);
+    }
+  }
+  window.connectSlack = connectSlack;
+
+  async function disconnectChannel(channelId) {
+    if (!claw || !claw.isConnected) return;
+    try {
+      var result = await claw.logoutChannel(channelId);
+      logEvent("info", channelId + " disconnected (cleared=" + result.cleared + ")");
+      expandedChannel = null;
+      await refreshChannels();
+    } catch (err) {
+      logEvent("error", channelId + " disconnect failed: " + err.message);
+    }
+  }
+  window.disconnectChannel = disconnectChannel;
+
+  // ── Real-time Channel Status ──────────────────────────────
+  var unsubChannelStatus = null;
+
+  function startChannelStatusListener() {
+    if (unsubChannelStatus) unsubChannelStatus();
+    if (!claw) return;
+    unsubChannelStatus = claw.onChannelStatus(function(event) {
+      if (channelData) {
+        channelData.channels = event.channels;
+        channelData.channelAccounts = event.channelAccounts;
+        if (currentTab === "channels") renderChannelsList();
+        renderChannelSidebar();
+      }
+    });
+  }
+
+  // Render initial empty state
+  renderChannelsList();
 
   // Try loading SDK in background (non-blocking)
   initSDK();
