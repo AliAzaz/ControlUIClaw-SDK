@@ -296,7 +296,7 @@ export interface ChatEvent {
   /** Model identifier (e.g. "gpt-5.4", "sonnet-4.6") when reported by the gateway. */
   model?: string;
   /** Tool call info (only for type === "tool"). */
-  tool?: { phase: string; name: string; toolCallId: string; args?: Record<string, unknown> };
+  tool?: { phase: string; name: string; toolCallId?: string; args?: Record<string, unknown> };
   /** Raw payload from the gateway for advanced use. */
   raw: Record<string, unknown>;
 }
