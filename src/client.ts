@@ -1102,7 +1102,7 @@ export class ControlUIClaw {
     // the UI can prompt the user to relink (force: true) or disconnect first.
     if (!startQr && startMsg && /already linked|already connected/i.test(startMsg)) {
       onStatus({ step: "failed", error: startMsg, message: startMsg });
-      return;
+      throw new Error(startMsg);
     }
 
     onStatus({ step: "qr_ready", qrDataUrl: startQr, message: "QR code ready — scan with your phone" });
