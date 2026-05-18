@@ -32,6 +32,13 @@ import {
   type ChannelStatusEvent,
   type ChannelsChannelData,
   type ChannelAccountSnapshot,
+  type SkillStatusReport,
+  type SkillUpdateResult,
+  type CronJob,
+  type CronJobCreate,
+  type CronJobPatch,
+  type CronJobsListResult,
+  type CronRemoveResult,
 } from "./types";
 
 import {
@@ -1291,6 +1298,57 @@ export class ControlUIClaw {
         });
       }
     });
+  }
+
+  // ── Skills ─────────────────────────────────────────────────────────────
+
+  /** List installed skills and their status for the default workspace. */
+  async getSkillsStatus(): Promise<SkillStatusReport> {
+    return this._core.request<SkillStatusReport>("skills.status", {});
+  }
+
+  /** Enable or disable a skill by key. */
+  async updateSkill(skillKey: string, enabled: boolean): Promise<SkillUpdateResult> {
+    return this._core.request<SkillUpdateResult>("skills.update", { skillKey, enabled });
+  }
+
+  // ── Cron ─────────────────────────────────────────────────────────────────
+
+  /** List cron jobs (includes disabled by default). */
+  async listCronJobs(opts?: {
+    includeDisabled?: boolean;
+    limit?: number;
+    offset?: number;
+    query?: string;
+  }): Promise<CronJobsListResult> {
+    const params: Record<string, unknown> = { includeDisabled: opts?.includeDisabled ?? true };
+    if (opts?.limit !== undefined) params.limit = opts.limit;
+    if (opts?.offset !== undefined) params.offset = opts.offset;
+    if (opts?.query) params.query = opts.query;
+    return this._core.request<CronJobsListResult>("cron.list", params);
+  }
+
+  /** Create a new cron job. */
+  async addCronJob(job: CronJobCreate): Promise<CronJob> {
+    return this._core.request<CronJob>(
+      "cron.add",
+      job as unknown as Record<string, unknown>,
+    );
+  }
+
+  /** Patch an existing cron job. */
+  async updateCronJob(id: string, patch: CronJobPatch): Promise<CronJob> {
+    return this._core.request<CronJob>("cron.update", { id, patch });
+  }
+
+  /** Delete a cron job. */
+  async removeCronJob(id: string): Promise<CronRemoveResult> {
+    return this._core.request<CronRemoveResult>("cron.remove", { id });
+  }
+
+  /** Enable or disable a cron job. */
+  async setCronJobEnabled(id: string, enabled: boolean): Promise<CronJob> {
+    return this.updateCronJob(id, { enabled });
   }
 
   // ── Utilities ──────────────────────────────────────────────────────────

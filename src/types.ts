@@ -545,3 +545,125 @@ export interface ChannelStatusEvent {
   /** Per-channel per-account snapshots. */
   channelAccounts: Record<string, ChannelAccountSnapshot[]>;
 }
+
+// ── Skills ────────────────────────────────────────────────────────────────
+
+export type SkillStatusEntry = {
+  name: string;
+  description: string;
+  source: string;
+  filePath: string;
+  baseDir: string;
+  skillKey: string;
+  bundled?: boolean;
+  primaryEnv?: string;
+  emoji?: string;
+  homepage?: string;
+  always: boolean;
+  disabled: boolean;
+  blockedByAllowlist: boolean;
+  eligible: boolean;
+  requirements: {
+    bins: string[];
+    env: string[];
+    config: string[];
+    os: string[];
+  };
+  missing: {
+    bins: string[];
+    env: string[];
+    config: string[];
+    os: string[];
+  };
+};
+
+export type SkillStatusReport = {
+  workspaceDir: string;
+  managedSkillsDir: string;
+  skills: SkillStatusEntry[];
+};
+
+export type SkillUpdateResult = {
+  ok: boolean;
+  skillKey: string;
+};
+
+// ── Cron ──────────────────────────────────────────────────────────────────
+
+export type CronScheduleKind = "cron" | "every" | "at";
+export type CronEveryUnit = "minutes" | "hours" | "days";
+export type CronScheduleCron = { kind: "cron"; expr: string; tz?: string; staggerMs?: number };
+export type CronScheduleEvery = { kind: "every"; everyMs: number; anchorMs?: number };
+export type CronScheduleAt = { kind: "at"; at: string };
+export type CronSchedule = CronScheduleCron | CronScheduleEvery | CronScheduleAt;
+
+export type CronSessionTarget = "main" | "isolated" | "current" | `session:${string}`;
+export type CronWakeMode = "next-heartbeat" | "now";
+export type CronPayloadKind = "agentTurn" | "systemEvent";
+export type CronDeliveryMode = "none" | "announce" | "webhook";
+export type CronThinkingLevel = "off" | "low" | "medium" | "high";
+
+export interface CronPayloadAgentTurn {
+  kind: "agentTurn";
+  message: string;
+  model?: string;
+  thinking?: string;
+  timeoutSeconds?: number;
+  lightContext?: boolean;
+}
+
+export interface CronPayloadSystemEvent {
+  kind: "systemEvent";
+  text: string;
+}
+
+export type CronPayload = CronPayloadAgentTurn | CronPayloadSystemEvent;
+
+export interface CronDelivery {
+  mode: CronDeliveryMode;
+  channel?: string;
+  to?: string;
+  accountId?: string;
+  bestEffort?: boolean;
+}
+
+export interface CronJobState {
+  lastRunAtMs?: number;
+  lastDurationMs?: number;
+  nextRunAtMs?: number;
+  lastStatus?: "ok" | "error" | "skipped" | string;
+  runningAtMs?: number;
+}
+
+export interface CronJob {
+  id: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  deleteAfterRun?: boolean;
+  schedule: CronSchedule;
+  sessionTarget: CronSessionTarget;
+  wakeMode: CronWakeMode;
+  payload: CronPayload;
+  delivery?: CronDelivery;
+  state?: CronJobState;
+  createdAtMs?: number;
+  updatedAtMs?: number;
+}
+
+export interface CronJobsListResult {
+  jobs: CronJob[];
+  total?: number;
+  limit?: number;
+  offset?: number;
+  hasMore?: boolean;
+  nextOffset?: number | null;
+}
+
+export interface CronRemoveResult {
+  ok: boolean;
+  removed: boolean;
+}
+
+export type CronJobCreate = Omit<CronJob, "id" | "createdAtMs" | "updatedAtMs" | "state">;
+export type CronJobPatch = Partial<CronJobCreate>;
