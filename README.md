@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@controluiclaw/sdk)](https://www.npmjs.com/package/@controluiclaw/sdk)
 
-A developer guide for connecting to the OpenClaw gateway via the `@controluiclaw/sdk` WebSocket client. Covers initialization, connection lifecycle, event mapping, health monitoring, extended thinking, token usage tracking, and graceful teardown.
+A developer guide for connecting to the OpenClaw gateway via the `@controluiclaw/sdk` WebSocket client. Covers initialization, connection lifecycle, event mapping, health monitoring, extended thinking, token usage tracking, skill management, cron job scheduling, and graceful teardown.
 
 ## Prerequisites
 
@@ -703,6 +703,137 @@ unsub();
 
 ---
 
+## Skills Management
+
+List installed skills for the default workspace and enable or disable them by key. Requires an active connection (`claw.isConnected`).
+
+### List Skill Status
+
+```ts
+const report = await claw.getSkillsStatus();
+
+console.log("Workspace:", report.workspaceDir);
+console.log("Managed skills dir:", report.managedSkillsDir);
+
+for (const skill of report.skills) {
+  console.log(
+    skill.skillKey,
+    skill.disabled ? "(disabled)" : "(enabled)",
+    skill.eligible ? "" : "(missing requirements)",
+  );
+  if (!skill.eligible) {
+    console.log("  Missing bins:", skill.missing.bins);
+    console.log("  Missing env:", skill.missing.env);
+  }
+}
+```
+
+Each `SkillStatusEntry` includes metadata (`name`, `description`, `source`, `filePath`), eligibility flags (`eligible`, `disabled`, `blockedByAllowlist`, `always`), and `requirements` / `missing` breakdowns for bins, env vars, config keys, and OS constraints.
+
+### Enable or Disable a Skill
+
+```ts
+const result = await claw.updateSkill("my-skill-key", true);
+console.log(result.ok, result.skillKey);
+```
+
+---
+
+## Cron Job Management
+
+Create, list, update, and remove scheduled jobs on the gateway. Cron jobs can run agent turns or inject system events into a session on a cron expression, fixed interval, or one-shot schedule.
+
+All cron methods require an active connection.
+
+### List Cron Jobs
+
+By default, `listCronJobs()` includes disabled jobs. Use options to paginate or filter:
+
+```ts
+const { jobs, total, hasMore } = await claw.listCronJobs({
+  includeDisabled: true,
+  limit: 50,
+  offset: 0,
+  query: "daily",
+});
+
+for (const job of jobs) {
+  console.log(job.id, job.name, job.enabled ? "on" : "off");
+  if (job.state?.nextRunAtMs) {
+    console.log("  Next run:", new Date(job.state.nextRunAtMs).toISOString());
+  }
+}
+```
+
+### Create a Cron Job
+
+`CronJobCreate` omits server-assigned fields (`id`, `createdAtMs`, `updatedAtMs`, `state`). Schedules use a discriminated `kind`:
+
+| `kind`    | Fields                          | Use case                          |
+| --------- | ------------------------------- | --------------------------------- |
+| `"cron"`  | `expr`, optional `tz`, `staggerMs` | Standard cron expression       |
+| `"every"` | `everyMs`, optional `anchorMs`   | Fixed interval in milliseconds |
+| `"at"`    | `at` (ISO timestamp)               | One-shot run                   |
+
+Payloads are either an **agent turn** (sends a message to the agent) or a **system event** (injects text into the session):
+
+```ts
+import type { CronJobCreate } from "@controluiclaw/sdk";
+
+// Recurring agent turn every day at 9:00 UTC
+const daily: CronJobCreate = {
+  name: "Morning briefing",
+  enabled: true,
+  schedule: { kind: "cron", expr: "0 9 * * *", tz: "UTC" },
+  sessionTarget: "main",
+  wakeMode: "now",
+  payload: {
+    kind: "agentTurn",
+    message: "Summarize overnight activity.",
+    thinking: "low",
+    timeoutSeconds: 120,
+  },
+  delivery: { mode: "none" },
+};
+
+const created = await claw.addCronJob(daily);
+console.log("Created job:", created.id);
+
+// One-shot system event
+const once: CronJobCreate = {
+  name: "Reminder",
+  enabled: true,
+  schedule: { kind: "at", at: "2026-12-31T23:59:00Z" },
+  sessionTarget: "isolated",
+  wakeMode: "next-heartbeat",
+  payload: { kind: "systemEvent", text: "Year-end checkpoint." },
+  deleteAfterRun: true,
+};
+
+await claw.addCronJob(once);
+```
+
+`sessionTarget` can be `"main"`, `"isolated"`, `"current"`, or `` `session:${sessionKey}` ``. `wakeMode` is `"now"` or `"next-heartbeat"`. Optional `delivery` supports `mode: "none" | "announce" | "webhook"` with channel routing fields.
+
+### Update, Enable, Disable, and Remove
+
+```ts
+// Partial update
+const updated = await claw.updateCronJob(jobId, {
+  name: "Morning briefing (v2)",
+  payload: { kind: "agentTurn", message: "Updated prompt." },
+});
+
+// Toggle without rebuilding the patch object
+await claw.setCronJobEnabled(jobId, false);
+
+// Delete
+const removed = await claw.removeCronJob(jobId);
+console.log(removed.ok, removed.removed);
+```
+
+---
+
 ## Device Authentication
 
 The SDK uses Ed25519 key pairs for device authentication. By default, a key pair is auto-generated on first connect and cached in `sessionStorage` (browser) or in memory (Node.js).
@@ -867,6 +998,13 @@ main();
 | `setSlackChannelTokens(bot, app, acct?)` | `Promise<void>` | Set Slack bot + app tokens |
 | `logoutChannel(channel, opts?)` | `Promise<ChannelLogoutResult>` | Disconnect any channel |
 | `onChannelStatus(cb)` | `Unsubscribe` | Subscribe to real-time channel status |
+| `getSkillsStatus()` | `Promise<SkillStatusReport>` | List installed skills and eligibility |
+| `updateSkill(skillKey, enabled)` | `Promise<SkillUpdateResult>` | Enable or disable a skill by key |
+| `listCronJobs(opts?)` | `Promise<CronJobsListResult>` | List cron jobs with optional pagination |
+| `addCronJob(job)` | `Promise<CronJob>` | Create a new cron job |
+| `updateCronJob(id, patch)` | `Promise<CronJob>` | Patch an existing cron job |
+| `removeCronJob(id)` | `Promise<CronRemoveResult>` | Delete a cron job |
+| `setCronJobEnabled(id, enabled)` | `Promise<CronJob>` | Enable or disable a cron job |
 | `request<T>(method, params?)` | `Promise<T>` | Generic gateway request |
 
 ### `ControlUIClaw` Static Methods
@@ -909,6 +1047,30 @@ main();
 | `WhatsAppLoginStatusEvent` | type | Progress events during WhatsApp login |
 | `ChannelLogoutResult` | type | Result from `logoutChannel()` |
 | `ChannelStatusEvent` | type | Real-time channel status event |
+| `SkillStatusEntry` | type | Single skill metadata and eligibility |
+| `SkillStatusReport` | type | Workspace skill listing from `getSkillsStatus()` |
+| `SkillUpdateResult` | type | Result from `updateSkill()` |
+| `CronJob` | type | Full cron job record |
+| `CronJobCreate` | type | Fields required to create a cron job |
+| `CronJobPatch` | type | Partial update for `updateCronJob()` |
+| `CronJobState` | type | Runtime state (last/next run, status) |
+| `CronJobsListResult` | type | Paginated list from `listCronJobs()` |
+| `CronRemoveResult` | type | Result from `removeCronJob()` |
+| `CronSchedule` | type | Schedule union (`cron` \| `every` \| `at`) |
+| `CronScheduleKind` | type | `"cron"` \| `"every"` \| `"at"` |
+| `CronScheduleCron` | type | Cron expression schedule |
+| `CronScheduleEvery` | type | Interval schedule |
+| `CronScheduleAt` | type | One-shot schedule |
+| `CronPayload` | type | `agentTurn` or `systemEvent` payload |
+| `CronPayloadAgentTurn` | type | Agent message payload |
+| `CronPayloadSystemEvent` | type | System event text payload |
+| `CronPayloadKind` | type | `"agentTurn"` \| `"systemEvent"` |
+| `CronDelivery` | type | Optional delivery routing |
+| `CronDeliveryMode` | type | `"none"` \| `"announce"` \| `"webhook"` |
+| `CronSessionTarget` | type | Target session for the job |
+| `CronWakeMode` | type | `"next-heartbeat"` \| `"now"` |
+| `CronThinkingLevel` | type | Thinking level for agent-turn payloads |
+| `CronEveryUnit` | type | Unit hint for interval schedules |
 
 ---
 
@@ -916,7 +1078,7 @@ main();
 
 **"Already connected or connecting"** — You called `connect()` while the client is already connected or mid-handshake. Call `disconnect()` first if you need to reconnect.
 
-**"Not connected"** — You called `request()`, `sendPrompt()`, or `listSessions()` before the connection was established. Wait for `connect()` to resolve with `ok: true`, or check `claw.isConnected` before making requests.
+**"Not connected"** — You called `request()`, `sendPrompt()`, `listSessions()`, `getSkillsStatus()`, or a cron method before the connection was established. Wait for `connect()` to resolve with `ok: true`, or check `claw.isConnected` before making requests.
 
 **"Request timed out"** — The gateway did not respond within 30 seconds. This may indicate the gateway is overloaded or the network connection is unstable.
 
