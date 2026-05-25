@@ -204,6 +204,9 @@ function createSessionKey(prefix = "agent:main"): string {
 // ── Title Derivation ────────────────────────────────────────────────────────
 
 const DERIVED_TITLE_MAX_LEN = 60;
+// Gateway enforces this as its hard-max for chat.history requests. Using the
+// full ceiling gives us the best chance of reaching the very first message.
+const CHAT_HISTORY_TITLE_LIMIT = 1000;
 
 /** Truncate a title string, preferring word boundaries. */
 function truncateTitle(text: string, maxLen: number): string {
@@ -764,6 +767,9 @@ class CoreClient {
 export class ControlUIClaw {
   private _core: CoreClient;
   private _defaultThinking: ThinkingLevel;
+  // Cache of session-key → derived title so the title is fixed from the first
+  // user message and never mutated by later listSessions calls.
+  private readonly _sessionTitleCache = new Map<string, string>();
 
   private constructor(core: CoreClient, thinking: ThinkingLevel) {
     this._core = core;
@@ -837,17 +843,34 @@ export class ControlUIClaw {
     const sessions = result?.sessions ?? [];
     sessions.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 
-    // Client-side title derivation for sessions missing a usable derivedTitle
+    // Client-side title derivation for sessions missing a usable derivedTitle.
+    // Rules:
+    //  1. Once a title is cached for a session key, reuse it — the title must
+    //     be fixed at the first user message and never shift on later sends.
+    //  2. Only update derivedTitle when a firstUserMessage is actually found.
+    //     If the history fetch yields nothing, keep the gateway's original
+    //     derivedTitle rather than falling back to the updatedAt-based stub
+    //     (which would change on every new message).
+    //  3. Use the gateway hard-max limit so we reach back as far as possible.
+    //     chat.history returns rawMessages.slice(-limit), i.e. the newest N
+    //     messages in chronological order; messages.find() then picks the
+    //     oldest user message within that window.
     await Promise.all(
       sessions.map(async (s) => {
+        // Return the cached title immediately — title is fixed after first derivation.
+        const cached = this._sessionTitleCache.get(s.key);
+        if (cached) {
+          s.derivedTitle = cached;
+          return;
+        }
+
         if (!s.derivedTitle?.trim()?.includes("(untrusted metadata):")) return;
 
-        // Try to get the first user message from chat history
         let firstUserMessage: string | null = null;
         try {
           const history = await this._core.request<ChatHistoryResult>(
             "chat.history",
-            { sessionKey: s.key, limit: 5 },
+            { sessionKey: s.key, limit: CHAT_HISTORY_TITLE_LIMIT },
           );
           const messages = history?.messages ?? [];
           const firstUser = messages.find(
@@ -860,7 +883,16 @@ export class ControlUIClaw {
         } catch {
           // chat.history may not be available for all sessions — fall through
         }
-        s.derivedTitle = deriveSessionTitle(s, firstUserMessage);
+
+        // Only update and cache when we actually found the first user message.
+        // Without this guard the fallback (session-key + updatedAt) would be
+        // written to derivedTitle on every listSessions call, making the title
+        // change with every new message.
+        if (firstUserMessage) {
+          const derived = deriveSessionTitle(s, firstUserMessage);
+          this._sessionTitleCache.set(s.key, derived);
+          s.derivedTitle = derived;
+        }
       }),
     );
 

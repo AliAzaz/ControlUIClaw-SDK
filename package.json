@@ -1,6 +1,6 @@
 {
   "name": "@controluiclaw/sdk",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "TypeScript SDK for connecting to the OpenClaw gateway via WebSocket",
   "type": "module",
   "main": "./dist/controluiclaw.js",
