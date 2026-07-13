@@ -10,6 +10,15 @@ A developer guide for connecting to the OpenClaw gateway via the `@controluiclaw
 - A running OpenClaw gateway (default port `18789`)
 - An auth token (optional if device-only auth is sufficient)
 
+### Gateway Compatibility
+
+| OpenClaw release | Gateway protocol | SDK support |
+| ---------------- | ---------------- | ----------- |
+| ≤ 2026.4.x       | v3               | ✅ (negotiates v3) |
+| ≥ 2026.5.19      | v4 (v4 minimum for clients) | ✅ since SDK 1.1.0 (negotiates v4) |
+
+SDK 1.1.0 advertises protocol range `{min: 3, max: 4}` by default, so it works with both older and current gateways. SDK ≤ 1.0.x pins v3 and is **rejected** by gateways from 2026.5.19 onward with a `PROTOCOL_MISMATCH` error.
+
 Install the SDK:
 
 ```bash
@@ -74,13 +83,13 @@ const claw = ControlUIClaw.init({
   autoReconnect: true,                 // Auto-reconnect on drop (default: true)
   initialBackoffMs: 800,               // First retry delay (default: 800ms)
   maxBackoffMs: 15_000,                // Max retry delay cap (default: 15s)
-  protocol: { min: 3, max: 3 },        // Protocol version range
+  protocol: { min: 3, max: 4 },        // Protocol version range
   caps: ["tool-events"],               // Additional capabilities to advertise
   clientInfo: {                        // Override client identification
     id: "my-app",
     version: "2.0.0",
     platform: "web",
-    mode: "sdk",
+    mode: "ui",                        // must be a gateway-known mode (e.g. "ui", "backend")
   },
 });
 ```
@@ -97,7 +106,7 @@ const claw = ControlUIClaw.init({
 | `autoReconnect`   | `boolean`         | `true`                           | Automatically reconnect on disconnection           |
 | `initialBackoffMs`| `number`          | `800`                            | Initial reconnect backoff in milliseconds          |
 | `maxBackoffMs`    | `number`          | `15000`                          | Maximum reconnect backoff in milliseconds          |
-| `protocol`        | `{min, max}`      | `{min: 3, max: 3}`              | Protocol version range for negotiation             |
+| `protocol`        | `{min, max}`      | `{min: 3, max: 4}`              | Protocol version range for negotiation             |
 | `caps`            | `string[]`        | `["tool-events"]`                | Capabilities to advertise to the gateway           |
 | `clientInfo`      | `Partial<ClientInfo>` | Auto-detected                | Client identification metadata                     |
 | `deviceIdentity`  | `DeviceIdentity`  | Auto-generated                   | Custom Ed25519 device identity for auth            |
@@ -112,10 +121,15 @@ Call `connect()` to open the WebSocket and complete the gateway handshake. The m
 const result = await claw.connect();
 
 if (result.ok) {
-  console.log("Protocol:", result.protocol);       // e.g. 3
-  console.log("Server:", result.serverVersion);     // e.g. "2026.4.1"
+  console.log("Protocol:", result.protocol);       // e.g. 4
+  console.log("Server:", result.serverVersion);     // e.g. "2026.6.11"
+  console.log("Methods:", result.features?.methods); // gateway-advertised RPCs
 } else {
   console.error(result.error?.code, result.error?.message);
+  // Structured details (v4 gateways) explain exactly what failed:
+  if (result.error?.details?.code === "PROTOCOL_MISMATCH") {
+    console.error("Gateway expects protocol", result.error.details.expectedProtocol);
+  }
 }
 ```
 
@@ -138,7 +152,8 @@ You do not need to handle any of these steps manually — `connect()` manages th
 | `ok`            | `boolean`| Whether the connection succeeded                     |
 | `protocol`      | `number` | Negotiated protocol version (present when `ok`)      |
 | `serverVersion` | `string` | Gateway server version (present when `ok`)           |
-| `error`         | `object` | `{ code, message }` when `ok` is false               |
+| `features`      | `object` | `{ methods, events }` advertised by the gateway (v4+) |
+| `error`         | `object` | `{ code, message, details? }` when `ok` is false. `details.code` carries stable identifiers like `PROTOCOL_MISMATCH`, `PAIRING_REQUIRED`, or `DEVICE_AUTH_*` (v4+) |
 
 ### Connection State
 
@@ -243,7 +258,9 @@ Streaming tokens, completed messages, errors, and aborted runs. Chat events now 
 const unsub = claw.chatEvents((event: ChatEvent) => {
   switch (event.type) {
     case "stream":
-      // Streaming token chunk arrived
+      // Streaming chunk arrived. On v4 gateways `text` is the increment;
+      // when `event.replace` is true, reset your buffer to `text` instead
+      // of appending (full-content refresh).
       console.log("Streaming:", event.text);
       if (event.thinking) console.log("Thinking:", event.thinking);
       break;
@@ -269,12 +286,16 @@ const unsub = claw.chatEvents((event: ChatEvent) => {
 
 | Field        | Type                                           | Description                                      |
 | ------------ | ---------------------------------------------- | ------------------------------------------------ |
-| `type`       | `"stream" \| "final" \| "error" \| "aborted"` | Event type                                       |
+| `type`       | `"stream" \| "final" \| "error" \| "aborted" \| "tool"` | Event type                             |
 | `runId`      | `string`                                       | Unique run identifier                            |
 | `sessionKey` | `string`                                       | Session this event belongs to                    |
-| `text`       | `string`                                       | Extracted text (accumulated delta or full final)  |
+| `text`       | `string`                                       | Incremental chunk on `stream` (v4 gateways), full text on `final` |
+| `replace`    | `boolean \| undefined`                         | On `stream`: `text` is a full refresh — replace your buffer, don't append |
 | `thinking`   | `string \| undefined`                          | Thinking/reasoning text (when extended thinking is enabled) |
 | `usage`      | `TokenUsage \| undefined`                      | Token usage counters (typically populated on `final`) |
+| `errorKind`  | `ChatErrorKind \| undefined`                   | Failure category on `error`: `refusal`, `timeout`, `rate_limit`, `context_length`, `unknown` (v4+) |
+| `stopReason` | `string \| undefined`                          | Provider stop reason on `final`/`aborted` (v4+)  |
+| `tool`       | `object \| undefined`                          | `{ phase, name, toolCallId, args }` on `tool` events (phases: `start`, `update`, `result`) |
 | `raw`        | `Record<string, unknown>`                      | Raw gateway payload for advanced use             |
 
 ---
@@ -519,6 +540,22 @@ All messages over the WebSocket are JSON-encoded frames with a `type` discrimina
 }
 ```
 
+On protocol v4 gateways, `delta` payloads additionally carry the incremental chunk and an optional refresh marker:
+
+```json
+{
+  "type": "event",
+  "event": "chat",
+  "payload": {
+    "state": "delta",
+    "runId": "...",
+    "deltaText": "next chunk",
+    "replace": false,
+    "message": { "role": "assistant", "content": [{ "type": "text", "text": "full accumulated text so far" }] }
+  }
+}
+```
+
 ### Gateway Events
 
 | Event                | Description                                   | SDK Mapping          |
@@ -529,7 +566,8 @@ All messages over the WebSocket are JSON-encoded frames with a `type` discrimina
 | `sessions.changed`   | Sessions list updated                          | `sessionHealth()`    |
 | `error`              | Gateway-level error                            | `sessionHealth()`    |
 | `session.error`      | Session-scoped error                           | `sessionHealth()`    |
-| `session.tool`       | Tool invocation event                          | Silently ignored     |
+| `session.tool`       | Tool lifecycle event (start/update/result)     | `chatEvents()` as `type: "tool"` |
+| `health`             | Gateway health snapshot with channel status    | `onChannelStatus()`  |
 | *(other)*            | Any unrecognized event                         | `sessionHealth()` as `code: "event"` |
 
 ---
@@ -569,6 +607,15 @@ Responses arrive asynchronously through `chatEvents()`. The SDK generates a uniq
 | Field      | Type            | Default                  | Description                                  |
 | ---------- | --------------- | ------------------------ | -------------------------------------------- |
 | `thinking` | `ThinkingLevel` | Inherited from init      | Thinking level override for this message     |
+
+### Abort a Run
+
+Cancel the active run for a session (or a specific run by id). The cancelled run emits an `aborted` chat event.
+
+```ts
+await claw.abortChat(sessionKey);         // abort the active run
+await claw.abortChat(sessionKey, runId);  // abort a specific run
+```
 
 ### Load Chat History
 
@@ -832,6 +879,24 @@ const removed = await claw.removeCronJob(jobId);
 console.log(removed.ok, removed.removed);
 ```
 
+### Run Now, Run History, and Scheduler Status
+
+```ts
+// Trigger a job immediately ("force" is the default), or only if due
+const run = await claw.runCronJob(jobId);
+const dueRun = await claw.runCronJob(jobId, "due");
+console.log(run.ok, run.ran);
+
+// Run history for one job, or gateway-wide
+const history = await claw.listCronRuns({ id: jobId, limit: 20 });
+for (const entry of history.entries ?? history.runs ?? []) {
+  console.log(entry.jobName, entry.status, new Date(entry.ts).toISOString());
+}
+
+// Overall scheduler status
+const status = await claw.getCronStatus();
+```
+
 ---
 
 ## Device Authentication
@@ -988,6 +1053,7 @@ main();
 | `listSessions(options?)` | `Promise<Session[]>` | Fetch sessions with derived titles |
 | `sendPrompt(key, msg, opts?)` | `Promise<void>` | Send a message with optional thinking level |
 | `sendImagePrompt(key, msg, opts)` | `Promise<void>` | Send a message with image attachments |
+| `abortChat(key, runId?)` | `Promise<void>` | Cancel the active (or a specific) run |
 | `chatHistory(key, options?)` | `Promise<ChatHistoryResult>` | Load chat history for a session |
 | `sessionHealth(cb)` | `Unsubscribe` | Subscribe to health/connection events |
 | `chatEvents(cb)` | `Unsubscribe` | Subscribe to chat events with thinking + usage |
@@ -1005,6 +1071,9 @@ main();
 | `updateCronJob(id, patch)` | `Promise<CronJob>` | Patch an existing cron job |
 | `removeCronJob(id)` | `Promise<CronRemoveResult>` | Delete a cron job |
 | `setCronJobEnabled(id, enabled)` | `Promise<CronJob>` | Enable or disable a cron job |
+| `runCronJob(id, mode?)` | `Promise<CronRunResult>` | Run a job now (`"force"`) or only if due (`"due"`) |
+| `listCronRuns(opts?)` | `Promise<CronRunsResult>` | Fetch cron run history |
+| `getCronStatus()` | `Promise<CronStatusResult>` | Get scheduler status |
 | `request<T>(method, params?)` | `Promise<T>` | Generic gateway request |
 
 ### `ControlUIClaw` Static Methods
@@ -1021,6 +1090,16 @@ main();
 | Export | Kind | Description |
 | --- | --- | --- |
 | `Channel` | enum | Channel identifiers (`WhatsApp`, `Telegram`, `Discord`, etc.) |
+| `GatewayRequestError` | class | Error thrown by failed requests; carries gateway `code` and `details` |
+| `SDK_VERSION` | const | SDK release version advertised to the gateway |
+| `ConnectErrorDetails` | type | Structured connect-failure detail (`PROTOCOL_MISMATCH` bounds, pairing info) |
+| `ChatErrorKind` | type | Failure category on `error` chat events |
+| `CronRunMode` | type | `"due"` \| `"force"` |
+| `CronRunResult` | type | Result from `runCronJob()` |
+| `CronRunsOptions` | type | Options for `listCronRuns()` |
+| `CronRunsResult` | type | Run history from `listCronRuns()` |
+| `CronRunLogEntry` | type | Single cron run history entry |
+| `CronStatusResult` | type | Scheduler status from `getCronStatus()` |
 | `InitOptions` | type | Configuration for `init()` |
 | `ConnectResult` | type | Result of `connect()` |
 | `HealthEvent` | type | Health/connection event |
@@ -1091,3 +1170,7 @@ main();
 **Session titles showing raw metadata** — The SDK automatically filters out raw JSON/metadata labels and derives titles from the first user message instead. If titles are still not appearing, ensure `listSessions()` has access to `chat.history` for fallback derivation.
 
 **Handshake failures** — Check that your gateway URL is correct and reachable. Verify that `wss://` is used for TLS endpoints and `ws://` only for private LAN addresses. Ensure your auth token is valid if one is required.
+
+**`PROTOCOL_MISMATCH` on connect** — Your SDK and gateway protocol ranges don't overlap. Gateways from OpenClaw 2026.5.19 onward require protocol v4; upgrade to SDK 1.1.0+ (default range `{min: 3, max: 4}`). The `result.error.details` object reports `clientMinProtocol`, `clientMaxProtocol`, and `expectedProtocol` so you can see which side needs updating.
+
+**Streamed text appears duplicated** — You are appending `event.text` per `stream` event against a pre-1.1.0 SDK talking to a v4 gateway (which repeats the accumulated text). Upgrade to SDK 1.1.0+, where `stream` events carry the increment; also honor `event.replace === true` by resetting your buffer instead of appending.

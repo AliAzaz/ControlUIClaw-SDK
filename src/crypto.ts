@@ -7,7 +7,7 @@
 // the @noble/ed25519 library for older browsers.
 // ---------------------------------------------------------------------------
 
-import type { DeviceIdentity, DeviceAuthFields } from "./types";
+import type { DeviceIdentity, DeviceAuthFields } from "./types.js";
 
 // ── Base64url helpers ──────────────────────────────────────────────────────
 
