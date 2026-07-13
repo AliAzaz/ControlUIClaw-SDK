@@ -201,7 +201,7 @@ export interface InitOptions {
   /** Scopes requested during handshake. */
   scopes?: string[];
 
-  /** Protocol version range. Defaults to { min: 3, max: 3 }. */
+  /** Protocol version range. Defaults to { min: 3, max: 4 }. */
   protocol?: { min: number; max: number };
 
   /** Additional capabilities to advertise. */
@@ -277,14 +277,15 @@ export interface HealthEvent {
 /**
  * Streamed by `chatEvents()`.
  *
- * - `stream`  — streaming token(s) arrived
- * - `final`   — run completed, full message available
- * - `error`   — run failed
- * - `aborted` — run was cancelled
- * - `tool`    — a tool call started on the server side
+ * - `stream`   — streaming token(s) arrived
+ * - `final`    — run completed, full message available
+ * - `error`    — run failed
+ * - `aborted`  — run was cancelled
+ * - `tool`     — a tool call started on the server side
+ * - `question` — the agent is asking the user to pick from selectable options
  */
 export interface ChatEvent {
-  type: "stream" | "final" | "error" | "aborted" | "tool";
+  type: "stream" | "final" | "error" | "aborted" | "tool" | "question";
   runId: string;
   sessionKey: string;
   /** Extracted text (accumulated for delta, full for final). */
@@ -296,10 +297,42 @@ export interface ChatEvent {
   /** Model identifier (e.g. "gpt-5.4", "sonnet-4.6") when reported by the gateway. */
   model?: string;
   /** Tool call info (only for type === "tool"). */
-  tool?: { phase: string; name: string; toolCallId?: string; args?: Record<string, unknown> };
+  tool?: { phase: string; name: string; toolCallId: string; args?: Record<string, unknown> };
+  /** Question/options info (only for type === "question"). */
+  question?: AskQuestion;
   /** Raw payload from the gateway for advanced use. */
   raw: Record<string, unknown>;
 }
+
+/** A single selectable option presented to the user. */
+export interface AskOption {
+  label: string;
+  value: string;
+}
+
+/**
+ * A structured question the agent asks the user, with selectable options. The
+ * agent blocks until the user resolves it via `resolveAsk`. Delivered on the
+ * `ask.requested` gateway event.
+ */
+export interface AskQuestion {
+  /** Correlation id used to resolve this question. */
+  id: string;
+  /** The question prompt shown to the user. */
+  prompt: string;
+  /** Selectable options. */
+  options: AskOption[];
+  /** Whether a free-text "Something else" answer is allowed. */
+  allowFreeText: boolean;
+  /** Whether the user may skip without answering. */
+  allowSkip: boolean;
+}
+
+/** The user's answer to an {@link AskQuestion}, sent back via `ask.resolve`. */
+export type AskAnswer =
+  | { kind: "option"; value: string }
+  | { kind: "text"; value: string }
+  | { kind: "skip" };
 
 /** A function that unsubscribes the listener when called. */
 export type Unsubscribe = () => void;
@@ -415,6 +448,18 @@ export interface IMessageChannelStatus {
   lastProbeAt?: number | null;
 }
 
+/** iMessage via BlueBubbles (recommended hosted path). */
+export interface BlueBubblesChannelStatus {
+  configured: boolean;
+  running: boolean;
+  baseUrl?: string | null;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  probe?: { ok?: boolean; [key: string]: unknown } | null;
+  lastProbeAt?: number | null;
+}
+
 export interface GoogleChatChannelStatus {
   configured: boolean;
   running: boolean;
@@ -449,6 +494,7 @@ export type ChannelsChannelData = {
   slack?: SlackChannelStatus | null;
   signal?: SignalChannelStatus | null;
   imessage?: IMessageChannelStatus | null;
+  bluebubbles?: BlueBubblesChannelStatus | null;
   nostr?: NostrChannelStatus | null;
   channelAccounts?: Record<string, ChannelAccountSnapshot[]> | null;
 };
@@ -482,6 +528,7 @@ export enum Channel {
   Slack = "slack",
   Signal = "signal",
   IMessage = "imessage",
+  BlueBubbles = "bluebubbles",
   GoogleChat = "googlechat",
   Nostr = "nostr",
 }
