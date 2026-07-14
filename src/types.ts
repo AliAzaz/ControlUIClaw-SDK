@@ -19,7 +19,7 @@ export interface ResponseFrame {
   id: string;
   ok: boolean;
   payload?: unknown;
-  error?: { code?: string; message?: string };
+  error?: { code?: string; message?: string; details?: Record<string, unknown> };
 }
 
 export interface EventFrame {
@@ -76,6 +76,7 @@ export interface ConnectParams {
 export interface HelloPayload {
   protocol: number;
   server?: { version?: string; [key: string]: unknown };
+  features?: { methods?: string[]; events?: string[]; [key: string]: unknown };
   [key: string]: unknown;
 }
 
@@ -201,7 +202,10 @@ export interface InitOptions {
   /** Scopes requested during handshake. */
   scopes?: string[];
 
-  /** Protocol version range. Defaults to { min: 3, max: 4 }. */
+  /**
+   * Protocol version range. Defaults to { min: 3, max: 4 }, which negotiates
+   * v3 with pre-2026.5.19 gateways and v4 with newer ones.
+   */
   protocol?: { min: number; max: number };
 
   /** Additional capabilities to advertise. */
@@ -255,12 +259,27 @@ export interface SendImagePromptOptions extends SendPromptOptions {
   images: ImageAttachment[];
 }
 
+/**
+ * Structured detail attached to gateway connect failures (protocol v4+).
+ * `code` is a stable identifier such as "PROTOCOL_MISMATCH", "PAIRING_REQUIRED",
+ * or one of the "DEVICE_AUTH_*" / "AUTH_*" codes.
+ */
+export interface ConnectErrorDetails {
+  code?: string;
+  clientMinProtocol?: number;
+  clientMaxProtocol?: number;
+  expectedProtocol?: number;
+  [key: string]: unknown;
+}
+
 /** Returned by `connect()` — either success or an error. */
 export interface ConnectResult {
   ok: boolean;
   protocol?: number;
   serverVersion?: string;
-  error?: { code: string; message: string };
+  /** Methods/events advertised by the gateway in `hello-ok` (v4+). */
+  features?: { methods?: string[]; events?: string[] };
+  error?: { code: string; message: string; details?: ConnectErrorDetails };
 }
 
 /**
@@ -284,12 +303,33 @@ export interface HealthEvent {
  * - `tool`     — a tool call started on the server side
  * - `question` — the agent is asking the user to pick from selectable options
  */
+/** Normalized failure category reported on `error` chat events (protocol v4+). */
+export type ChatErrorKind =
+  | "refusal"
+  | "timeout"
+  | "rate_limit"
+  | "context_length"
+  | "unknown";
+
 export interface ChatEvent {
   type: "stream" | "final" | "error" | "aborted" | "tool" | "question";
   runId: string;
   sessionKey: string;
-  /** Extracted text (accumulated for delta, full for final). */
+  /**
+   * Extracted text. On `stream` events this is the incremental chunk when the
+   * gateway provides one (protocol v4 `deltaText`), otherwise the accumulated
+   * text so far. Full text on `final`.
+   */
   text: string;
+  /**
+   * When true on a `stream` event, `text` is a full-content refresh — replace
+   * any accumulated buffer for this run instead of appending.
+   */
+  replace?: boolean;
+  /** Normalized failure category (present on some `error` events, v4+). */
+  errorKind?: ChatErrorKind;
+  /** Provider stop reason (present on some `final`/`aborted` events, v4+). */
+  stopReason?: string;
   /** Thinking / reasoning text (when extended thinking is enabled). */
   thinking?: string;
   /** Token usage for this event (typically populated on `final`). */
@@ -714,3 +754,67 @@ export interface CronRemoveResult {
 
 export type CronJobCreate = Omit<CronJob, "id" | "createdAtMs" | "updatedAtMs" | "state">;
 export type CronJobPatch = Partial<CronJobCreate>;
+
+/** Run mode for `runCronJob()`: "force" runs immediately, "due" only if the job is due. */
+export type CronRunMode = "due" | "force";
+
+/** Result from `runCronJob()`. */
+export interface CronRunResult {
+  ok: boolean;
+  ran?: boolean;
+  reason?: string;
+  [key: string]: unknown;
+}
+
+/** One persisted cron run history entry returned by `listCronRuns()`. */
+export interface CronRunLogEntry {
+  ts: number;
+  jobId: string;
+  jobName?: string;
+  action?: string;
+  status?: "ok" | "error" | "skipped" | string;
+  error?: string;
+  summary?: string;
+  delivered?: boolean;
+  deliveryStatus?: string;
+  deliveryError?: string;
+  sessionId?: string;
+  sessionKey?: string;
+  runId?: string;
+  runAtMs?: number;
+  durationMs?: number;
+  nextRunAtMs?: number;
+  model?: string;
+  provider?: string;
+  usage?: Record<string, number | undefined>;
+  [key: string]: unknown;
+}
+
+/** Options for `listCronRuns()`. */
+export interface CronRunsOptions {
+  /** "job" (default when `id` is set) or "all" for gateway-wide history. */
+  scope?: "job" | "all";
+  /** Job id to scope the history to. */
+  id?: string;
+  limit?: number;
+  offset?: number;
+  query?: string;
+  sortDir?: "asc" | "desc";
+}
+
+/** Result from `listCronRuns()`. */
+export interface CronRunsResult {
+  entries?: CronRunLogEntry[];
+  runs?: CronRunLogEntry[];
+  total?: number;
+  hasMore?: boolean;
+  [key: string]: unknown;
+}
+
+/** Scheduler status returned by `getCronStatus()`. */
+export interface CronStatusResult {
+  enabled?: boolean;
+  jobs?: number;
+  nextRunAtMs?: number | null;
+  [key: string]: unknown;
+}

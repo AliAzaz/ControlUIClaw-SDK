@@ -40,13 +40,39 @@ import {
   type CronJobsListResult,
   type CronRemoveResult,
   type AskAnswer,
-} from "./types";
+  type CronRunMode,
+  type CronRunResult,
+  type CronRunsOptions,
+  type CronRunsResult,
+  type CronStatusResult,
+  type ConnectErrorDetails,
+} from "./types.js";
 
 import {
   getOrCreateDeviceIdentity,
   buildDeviceAuthPayload,
   signPayload,
-} from "./crypto";
+} from "./crypto.js";
+
+/** SDK release version, advertised to the gateway during handshake. */
+export const SDK_VERSION = "1.1.0";
+
+/**
+ * Error thrown for failed gateway requests. Carries the gateway error `code`
+ * and structured `details` (e.g. PROTOCOL_MISMATCH protocol bounds) when the
+ * gateway provides them.
+ */
+export class GatewayRequestError extends Error {
+  readonly code?: string;
+  readonly details?: Record<string, unknown>;
+
+  constructor(message: string, code?: string, details?: Record<string, unknown>) {
+    super(message);
+    this.name = "GatewayRequestError";
+    this.code = code;
+    this.details = details;
+  }
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -298,13 +324,14 @@ class CoreClient {
   // Subscriber sets
   private _healthListeners = new Set<(e: HealthEvent) => void>();
   private _chatListeners = new Set<(e: ChatEvent) => void>();
+  private _channelStatusListeners = new Set<(e: ChannelStatusEvent) => void>();
 
   constructor(options: InitOptions) {
     this._url = options.url;
     this._token = options.token;
     this._clientInfo = {
       id: "openclaw-control-ui",
-      version: "1.0.0",
+      version: SDK_VERSION,
       platform:
         typeof navigator !== "undefined"
           ? navigator.platform ?? "web"
@@ -361,15 +388,26 @@ class CoreClient {
           ok: true,
           protocol: this._helloPayload?.protocol,
           serverVersion: this._helloPayload?.server?.version,
+          features: this._helloPayload?.features
+            ? {
+                methods: this._helloPayload.features.methods,
+                events: this._helloPayload.features.events,
+              }
+            : undefined,
         });
       };
 
-      const onFail = (msg: string) => {
+      const onFail = (msg: string, cause?: unknown) => {
         if (settled) return;
         settled = true;
+        const gwErr = cause instanceof GatewayRequestError ? cause : undefined;
         resolve({
           ok: false,
-          error: { code: "connection_failed", message: msg },
+          error: {
+            code: gwErr?.code ?? "connection_failed",
+            message: msg,
+            details: gwErr?.details as ConnectErrorDetails | undefined,
+          },
         });
       };
 
@@ -433,6 +471,11 @@ class CoreClient {
     return () => this._chatListeners.delete(cb);
   }
 
+  onChannelStatus(cb: (e: ChannelStatusEvent) => void): Unsubscribe {
+    this._channelStatusListeners.add(cb);
+    return () => this._channelStatusListeners.delete(cb);
+  }
+
   // ── Internal: emit to subscribers ──────────────────────────────────────
 
   private _emitHealth(e: HealthEvent): void {
@@ -447,10 +490,16 @@ class CoreClient {
     }
   }
 
+  private _emitChannelStatus(e: ChannelStatusEvent): void {
+    for (const fn of this._channelStatusListeners) {
+      try { fn(e); } catch (err) { console.error("[controluiclaw-sdk] channel status listener error:", err); }
+    }
+  }
+
   // ── Internal: one-shot connect hooks ───────────────────────────────────
 
   private _onceConnected: (() => void) | null = null;
-  private _onceError: ((msg: string) => void) | null = null;
+  private _onceError: ((msg: string, cause?: unknown) => void) | null = null;
   private _onceDisconnected: ((code: number, reason: string) => void) | null = null;
 
   private _clearOnceHooks(): void {
@@ -541,7 +590,13 @@ class CoreClient {
       if (pending.timer) clearTimeout(pending.timer);
       res.ok
         ? pending.resolve(res.payload)
-        : pending.reject(new Error(res.error?.message ?? "Request failed"));
+        : pending.reject(
+            new GatewayRequestError(
+              res.error?.message ?? "Request failed",
+              res.error?.code,
+              res.error?.details,
+            ),
+          );
     }
   }
 
@@ -559,7 +614,12 @@ class CoreClient {
       const state: string = p?.state ?? "";
       const runId: string = p?.runId ?? "";
       const sessionKey: string = p?.sessionKey ?? "";
-      const text = extractText(p?.message);
+      // Protocol v4 deltas carry the increment in `deltaText` (while `message`
+      // holds the full accumulated text); older gateways only send `message`.
+      const text =
+        state === "delta" && typeof p?.deltaText === "string"
+          ? p.deltaText
+          : extractText(p?.message);
 
       if (state === "delta" || state === "final" || state === "error" || state === "aborted") {
         const thinking = extractThinking(p?.message);
@@ -577,6 +637,9 @@ class CoreClient {
           text: state === "error" ? (p?.errorMessage ?? text ?? "Unknown error") : text,
           raw: p,
         };
+        if (state === "delta" && p?.replace === true) event.replace = true;
+        if (typeof p?.errorKind === "string") event.errorKind = p.errorKind as ChatEvent["errorKind"];
+        if (typeof p?.stopReason === "string") event.stopReason = p.stopReason;
         if (thinking) event.thinking = thinking;
         if (usage) event.usage = usage;
         if (model) event.model = model;
@@ -655,11 +718,12 @@ class CoreClient {
       return;
     }
 
-    // Tool lifecycle events → chatEvents stream
+    // Tool lifecycle events → chatEvents stream (all phases: start/update/result,
+    // so UIs can open and close tool cards).
     if (frame.event === "session.tool") {
       const p = frame.payload as Record<string, any>;
       const data = p?.data as Record<string, any> | undefined;
-      if (data?.phase === "start" && data?.name) {
+      if (data?.phase && data?.name) {
         const event: ChatEvent = {
           type: "tool",
           runId: p?.runId ?? "",
@@ -674,6 +738,19 @@ class CoreClient {
           raw: p,
         };
         this._emitChat(event);
+      }
+      return;
+    }
+
+    // Gateway health snapshots carry live channel status → onChannelStatus stream
+    if (frame.event === "health") {
+      const p = frame.payload as Record<string, any> | undefined;
+      if (p && (p.channels || p.channelAccounts)) {
+        this._emitChannelStatus({
+          ts: typeof p.ts === "number" ? p.ts : Date.now(),
+          channels: (p.channels ?? {}) as ChannelsChannelData,
+          channelAccounts: (p.channelAccounts ?? {}) as Record<string, ChannelAccountSnapshot[]>,
+        });
       }
       return;
     }
@@ -793,11 +870,15 @@ class CoreClient {
       // Auto-subscribe to session events
       this.request("sessions.subscribe").catch(() => {});
     } catch (err: any) {
-      const msg = `Handshake failed: ${err?.message ?? err}`;
+      const detailCode =
+        err instanceof GatewayRequestError && err.details?.code
+          ? ` [${err.details.code}]`
+          : "";
+      const msg = `Handshake failed: ${err?.message ?? err}${detailCode}`;
 
       const onceErr = this._onceError;
       this._clearOnceHooks();
-      onceErr?.(msg);
+      onceErr?.(msg, err);
 
       this._emitHealth({ code: "error", message: msg });
       this._ws?.close();
@@ -961,7 +1042,6 @@ export class ControlUIClaw {
       const raw = msg as Record<string, any>;
       // Extract attachments from any message (user or assistant)
       if (!msg.attachments) {
-        console.log(msg.attachments);
         const attachments = extractAttachments(raw);
         if (attachments) msg.attachments = attachments;
       }
@@ -1023,6 +1103,21 @@ export class ControlUIClaw {
    */
   async resolveAsk(id: string, answer: AskAnswer): Promise<void> {
     await this._core.request("ask.resolve", { id, answer });
+  }
+  
+  /** 
+   * Abort the active (or a specific) run for a chat session.
+   * The affected run emits an `aborted` chat event.
+   *
+   * ```ts
+   * await claw.abortChat(sessionKey);          // abort the active run
+   * await claw.abortChat(sessionKey, runId);   // abort a specific run
+   * ```
+   */
+  async abortChat(sessionKey: string, runId?: string): Promise<void> {
+    const params: Record<string, unknown> = { sessionKey };
+    if (runId) params.runId = runId;
+    await this._core.request("chat.abort", params);
   }
 
   /**
@@ -1433,19 +1528,7 @@ export class ControlUIClaw {
    * ```
    */
   onChannelStatus(callback: (event: ChannelStatusEvent) => void): Unsubscribe {
-    return this._core.onHealth((raw: HealthEvent) => {
-      const payload = raw as unknown as Record<string, unknown>;
-      if (payload.channels || payload.channelAccounts) {
-        callback({
-          ts: typeof payload.ts === "number" ? payload.ts : Date.now(),
-          channels: (payload.channels ?? {}) as ChannelsChannelData,
-          channelAccounts: (payload.channelAccounts ?? {}) as Record<
-            string,
-            ChannelAccountSnapshot[]
-          >,
-        });
-      }
-    });
+    return this._core.onChannelStatus(callback);
   }
 
   // ── Skills ─────────────────────────────────────────────────────────────
@@ -1497,6 +1580,33 @@ export class ControlUIClaw {
   /** Enable or disable a cron job. */
   async setCronJobEnabled(id: string, enabled: boolean): Promise<CronJob> {
     return this.updateCronJob(id, { enabled });
+  }
+
+  /**
+   * Run a cron job immediately ("force", the default) or only if it is
+   * currently due ("due").
+   */
+  async runCronJob(id: string, mode?: CronRunMode): Promise<CronRunResult> {
+    const params: Record<string, unknown> = { id };
+    if (mode) params.mode = mode;
+    return this._core.request<CronRunResult>("cron.run", params);
+  }
+
+  /** Fetch cron run history, either for one job (`id`) or gateway-wide (`scope: "all"`). */
+  async listCronRuns(opts?: CronRunsOptions): Promise<CronRunsResult> {
+    const params: Record<string, unknown> = {};
+    if (opts?.scope) params.scope = opts.scope;
+    if (opts?.id) params.id = opts.id;
+    if (opts?.limit !== undefined) params.limit = opts.limit;
+    if (opts?.offset !== undefined) params.offset = opts.offset;
+    if (opts?.query) params.query = opts.query;
+    if (opts?.sortDir) params.sortDir = opts.sortDir;
+    return this._core.request<CronRunsResult>("cron.runs", params);
+  }
+
+  /** Get overall cron scheduler status. */
+  async getCronStatus(): Promise<CronStatusResult> {
+    return this._core.request<CronStatusResult>("cron.status", {});
   }
 
   // ── Utilities ──────────────────────────────────────────────────────────

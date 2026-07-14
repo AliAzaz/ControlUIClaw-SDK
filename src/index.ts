@@ -2,7 +2,7 @@
 // ControlUIClaw SDK — Public API
 // ---------------------------------------------------------------------------
 
-export { ControlUIClaw } from "./client";
+export { ControlUIClaw, GatewayRequestError, SDK_VERSION } from "./client.js";
 
 // Crypto utilities (for advanced / custom auth flows)
 export {
@@ -12,20 +12,22 @@ export {
   signPayload,
   base64UrlEncode,
   base64UrlDecode,
-} from "./crypto";
+} from "./crypto.js";
 
 // Enums
-export { Channel } from "./types";
+export { Channel } from "./types.js";
 
 // Types
 export type {
   InitOptions,
   ConnectResult,
+  ConnectErrorDetails,
   HealthEvent,
   ChatEvent,
   AskQuestion,
   AskOption,
   AskAnswer,
+  ChatErrorKind,
   Unsubscribe,
   ConnectionState,
   Session,
@@ -84,4 +86,10 @@ export type {
   CronWakeMode,
   CronThinkingLevel,
   CronEveryUnit,
-} from "./types";
+  CronRunMode,
+  CronRunResult,
+  CronRunsOptions,
+  CronRunsResult,
+  CronRunLogEntry,
+  CronStatusResult,
+} from "./types.js";
