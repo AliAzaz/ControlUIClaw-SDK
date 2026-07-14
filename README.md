@@ -15,7 +15,7 @@ A developer guide for connecting to the OpenClaw gateway via the `@controluiclaw
 | OpenClaw release | Gateway protocol | SDK support |
 | ---------------- | ---------------- | ----------- |
 | ≤ 2026.4.x       | v3               | ✅ (negotiates v3) |
-| ≥ 2026.5.19      | v4 (v4 minimum for clients) | ✅ since SDK 1.1.0 (negotiates v4) |
+| ≥ 2026.5.19      | v4 (v4 minimum for clients) | ✅ since SDK 1.1.0 (negotiates v4; verified through 2026.7.1) |
 
 SDK 1.1.0 advertises protocol range `{min: 3, max: 4}` by default, so it works with both older and current gateways. SDK ≤ 1.0.x pins v3 and is **rejected** by gateways from 2026.5.19 onward with a `PROTOCOL_MISMATCH` error.
 
