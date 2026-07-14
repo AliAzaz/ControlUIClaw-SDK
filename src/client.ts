@@ -39,6 +39,7 @@ import {
   type CronJobPatch,
   type CronJobsListResult,
   type CronRemoveResult,
+  type AskAnswer,
   type CronRunMode,
   type CronRunResult,
   type CronRunsOptions,
@@ -346,7 +347,6 @@ class CoreClient {
       "operator.approvals",
       "operator.pairing",
     ];
-    // v3 for pre-2026.5.19 gateways, v4 for newer ones (which enforce min client v4).
     this._protocolRange = options.protocol ?? { min: 3, max: 4 };
     this._caps = options.caps ?? ["tool-events"];
     this._autoReconnect = options.autoReconnect ?? true;
@@ -657,6 +657,48 @@ class CoreClient {
           this._emitChat(event);
         }
       }
+      return;
+    }
+
+    // Agent asked the user a question with options → chatEvents stream.
+    if (frame.event === "ask.requested") {
+      const p = (frame.payload ?? {}) as Record<string, unknown>;
+      const id = typeof p.id === "string" ? p.id : "";
+      const prompt = typeof p.question === "string" ? p.question : "";
+      const rawOptions = Array.isArray(p.options) ? p.options : [];
+      const options = rawOptions
+        .filter(
+          (o): o is { label: string; value: string } =>
+            !!o &&
+            typeof o === "object" &&
+            typeof (o as { label?: unknown }).label === "string" &&
+            typeof (o as { value?: unknown }).value === "string",
+        )
+        .map((o) => ({ label: o.label, value: o.value }));
+      if (id && prompt) {
+        const event: ChatEvent = {
+          type: "question",
+          runId: typeof p.runId === "string" ? p.runId : "",
+          sessionKey: typeof p.sessionKey === "string" ? p.sessionKey : "",
+          text: "",
+          question: {
+            id,
+            prompt,
+            options,
+            allowFreeText: p.allowFreeText !== false,
+            allowSkip: p.allowSkip !== false,
+          },
+          raw: p,
+        };
+        this._emitChat(event);
+      }
+      return;
+    }
+
+    // A question was resolved (possibly by another device) → let listeners
+    // disable a stale picker. Swallowed here to avoid health-stream noise; the
+    // resolving tab updates its own state optimistically.
+    if (frame.event === "ask.resolved") {
       return;
     }
 
@@ -1050,6 +1092,20 @@ export class ControlUIClaw {
   }
 
   /**
+   * Resolve a pending question (from an `ask.requested` event / `ChatEvent`
+   * of type "question") with the user's answer. This unblocks the agent run.
+   *
+   * ```ts
+   * await claw.resolveAsk(question.id, { kind: "option", value: "python" });
+   * await claw.resolveAsk(question.id, { kind: "text", value: "Rust" });
+   * await claw.resolveAsk(question.id, { kind: "skip" });
+   * ```
+   */
+  async resolveAsk(id: string, answer: AskAnswer): Promise<void> {
+    await this._core.request("ask.resolve", { id, answer });
+  }
+  
+  /** 
    * Abort the active (or a specific) run for a chat session.
    * The affected run emits an `aborted` chat event.
    *
@@ -1355,8 +1411,18 @@ export class ControlUIClaw {
    */
   async setDiscordChannelToken(botToken: string, accountId?: string): Promise<void> {
     const discordPatch = accountId
-      ? { accounts: { [accountId]: { botToken } } }
-      : { botToken };
+      ? { accounts: { [accountId]: { token: botToken } } }
+      : { token: botToken };
+    await this.patchConfigDeep({ channels: { discord: discordPatch } });
+  }
+
+  /**
+   * Disconnect Discord by clearing its configured bot token.
+   */
+  async clearDiscordChannelToken(accountId?: string): Promise<void> {
+    const discordPatch = accountId
+      ? { accounts: { [accountId]: { token: null } } }
+      : { token: null };
     await this.patchConfigDeep({ channels: { discord: discordPatch } });
   }
 
@@ -1376,6 +1442,55 @@ export class ControlUIClaw {
       ? { accounts: { [accountId]: { botToken, appToken } } }
       : { botToken, appToken };
     await this.patchConfigDeep({ channels: { slack: slackPatch } });
+  }
+
+  /**
+   * Disconnect Slack by clearing its configured bot and app tokens.
+   *
+   * The Slack channel is token-based: it has no session to log out of, so the
+   * gateway's `channels.logout` RPC does not support it. Disconnecting instead
+   * means removing the tokens from config — symmetric to {@link setSlackChannelTokens}.
+   * A `config.patch` with `null` values deletes the keys (JSON Merge Patch
+   * semantics), which stops the channel and prevents it from reconnecting with
+   * the old credentials after the gateway restarts.
+   *
+   * ```ts
+   * await claw.clearSlackChannelTokens();
+   * ```
+   */
+  async clearSlackChannelTokens(accountId?: string): Promise<void> {
+    const slackPatch = accountId
+      ? { accounts: { [accountId]: { botToken: null, appToken: null } } }
+      : { botToken: null, appToken: null };
+    await this.patchConfigDeep({ channels: { slack: slackPatch } });
+  }
+
+  /**
+   * Connect iMessage via BlueBubbles (server URL + password from the BlueBubbles Mac app).
+   *
+   * ```ts
+   * await claw.setBlueBubblesChannelCredentials("http://192.168.1.100:1234", "secret");
+   * ```
+   */
+  async setBlueBubblesChannelCredentials(
+    serverUrl: string,
+    password: string,
+    accountId?: string,
+  ): Promise<void> {
+    const bluebubblesPatch = accountId
+      ? { accounts: { [accountId]: { enabled: true, serverUrl, password } } }
+      : { enabled: true, serverUrl, password, webhookPath: "/bluebubbles-webhook" };
+    await this.patchConfigDeep({ channels: { bluebubbles: bluebubblesPatch } });
+  }
+
+  /**
+   * Disconnect BlueBubbles / iMessage by clearing server URL and password.
+   */
+  async clearBlueBubblesChannelCredentials(accountId?: string): Promise<void> {
+    const bluebubblesPatch = accountId
+      ? { accounts: { [accountId]: { serverUrl: null, password: null } } }
+      : { serverUrl: null, password: null };
+    await this.patchConfigDeep({ channels: { bluebubbles: bluebubblesPatch } });
   }
 
   /**
