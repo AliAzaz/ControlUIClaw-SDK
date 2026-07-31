@@ -742,6 +742,39 @@ class CoreClient {
       return;
     }
 
+    // Run-scoped agent events. A client that advertises the `tool-events`
+    // capability (this SDK does, by default) is registered by the gateway as a
+    // run tool recipient, so it receives live tool lifecycle as `agent` frames
+    // — NOT `session.tool` (which the gateway sends only to subscribers without
+    // that registration). Mirror the `session.tool` mapping here so tool cards
+    // render live instead of only appearing after a refresh rebuilds them from
+    // chat.history. Other `agent` streams (delta/item/reasoning/error) are not
+    // consumed by this UI — the visible text streams via the `chat` frame — so
+    // swallow them rather than spam the health stream.
+    if (frame.event === "agent") {
+      const p = frame.payload as Record<string, any>;
+      if (p?.stream === "tool") {
+        const data = p?.data as Record<string, any> | undefined;
+        if (data?.phase && data?.name) {
+          const event: ChatEvent = {
+            type: "tool",
+            runId: p?.runId ?? "",
+            sessionKey: p?.sessionKey ?? "",
+            text: "",
+            tool: {
+              phase: data.phase,
+              name: data.name,
+              toolCallId: data.toolCallId ?? "",
+              args: data.args,
+            },
+            raw: p,
+          };
+          this._emitChat(event);
+        }
+      }
+      return;
+    }
+
     // Gateway health snapshots carry live channel status → onChannelStatus stream
     if (frame.event === "health") {
       const p = frame.payload as Record<string, any> | undefined;

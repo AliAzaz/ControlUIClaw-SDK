@@ -91,7 +91,29 @@ export interface Session {
   updatedAt?: number;
   createdAt?: number;
   lastMessage?: unknown;
+  /**
+   * Per-session reasoning override, mirrored from the gateway session record.
+   * `undefined`/absent means no override (the model/gateway default applies).
+   */
+  thinkingLevel?: ThinkingLevel | string | null;
+  /** Per-session speed override (`null`/absent = Default). */
+  fastMode?: FastMode;
+  /**
+   * Reasoning options the current model supports, provided by the gateway.
+   * Render these; the list is model-dependent — do not hardcode.
+   */
+  thinkingLevels?: ThinkingLevelOption[];
+  /** The reasoning level the gateway applies when no override is set. */
+  thinkingDefault?: string;
+  /** Effective provider family for this session (used to gate the Speed control). */
+  provider?: string;
   [key: string]: unknown;
+}
+
+/** A gateway-provided reasoning option (`id` is the value, `label` is the display text). */
+export interface ThinkingLevelOption {
+  id: string;
+  label: string;
 }
 
 export interface SessionsListResult {
@@ -108,7 +130,8 @@ export interface SessionsListResult {
  * - `"low"`      — light reasoning
  * - `"medium"`   — moderate reasoning (default when enabled)
  * - `"high"`     — deep reasoning
- * - `"xhigh"`    — maximum reasoning depth
+ * - `"xhigh"`    — very deep reasoning
+ * - `"max"`      — maximum reasoning depth
  * - `"adaptive"` — provider picks automatically
  */
 export type ThinkingLevel =
@@ -118,7 +141,27 @@ export type ThinkingLevel =
   | "medium"
   | "high"
   | "xhigh"
+  | "max"
   | "adaptive";
+
+/**
+ * Per-session speed override ("fast mode").
+ * - `true`   — Fast
+ * - `false`  — Standard
+ * - `"auto"` — Auto (gateway decides per request)
+ * - `null`   — Default (no override)
+ */
+export type FastMode = boolean | "auto" | null;
+
+/** Parameters accepted by the `sessions.patch` gateway RPC (subset used by the UI). */
+export interface SessionPatchParams {
+  key: string;
+  agentId?: string;
+  label?: string | null;
+  thinkingLevel?: string | null;
+  fastMode?: FastMode;
+  model?: string | null;
+}
 
 // ── Token Usage ───────────────────────────────────────────────────────────
 
